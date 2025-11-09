@@ -137,6 +137,10 @@ export async function POST() {
 		Array.from({ length: 16 }).map((_, i) => {
 			const city = CLINICS[i % CLINICS.length];
 			const startsAt = new Date(now.getTime() + (i + 1) * 60 * 60000); // spaced 1h apart
+			// Always assign a patient to display names in schedule (skip the first slot which is Omar's demo)
+			// Use round-robin across the pool starting after Omar/Mico to diversify names.
+			const assignedIndex = (i % (patients.length - 2)) + 2;
+			const patientId = patients[assignedIndex]?.id ?? patients[2]?.id;
 			return db.appointment.create({
 				data: {
 					specialty: SPECIALTIES[i % SPECIALTIES.length],
@@ -145,6 +149,7 @@ export async function POST() {
 					status: "SCHEDULED",
 					clinicLat: city.lat,
 					clinicLng: city.lng,
+					patientId,
 				},
 			});
 		})

@@ -8,10 +8,12 @@ export async function issueOffersForAppointment(params: {
 	appointmentId: string;
 	topN?: number;
 	expiryMinutes?: number;
+	suppressSms?: boolean;
 }) {
 	const { appointmentId } = params;
 	const topN = params.topN ?? 3;
 	const expiryMinutes = params.expiryMinutes ?? 5;
+	const suppressSms = params.suppressSms ?? false;
 
 	const appt = await db.appointment.findUnique({
 		where: { id: appointmentId },
@@ -99,8 +101,8 @@ export async function issueOffersForAppointment(params: {
 
 		const timeStr = appt.startsAt.toLocaleString();
 		const body = `SmartWait: A slot for ${appt.specialty} at ${timeStr}. Reply 1 to accept in ${expiryMinutes} min. Reply N to skip.`;
-		// Send SMS only to allowed phones (others create offers for UI but skip SMS)
-		if (allowedList.length === 0 || allowedList.includes(norm(c.entry.patient.phone))) {
+		// Send SMS only if not suppressed; and only to allowed phones when list provided
+		if (!suppressSms && (allowedList.length === 0 || allowedList.includes(norm(c.entry.patient.phone)))) {
 			try {
 				const { sid } = await sendSms(c.entry.patient.phone, body);
 				if (sid) {
@@ -205,6 +207,64 @@ export async function declineOfferForPatientPhone(phone: string) {
 		offerId: offer.id,
 	});
 	return { ok: true, message: "Declined" };
+}
+
+export async function acceptFirstOfferForAppointment(appointmentId: string) {
+	// Normalize and load demo allowed phones to exclude in simulation auto-accept
+	const norm = (p: string) => p.replace(/\D/g, "");
+	const allowedList =
+		process.env.DEMO_ALLOWED_PHONES
+			?.split(",")
+			.map((s) => s.trim())
+			.filter(Boolean)
+			.map(norm) ?? [];
+
+	// Find first active non-demo offer for this appointment
+	const offers = await db.offer.findMany({
+		where: {
+			appointmentId,
+			status: OfferStatus.SENT,
+			expiresAt: { gt: new Date() },
+		},
+		orderBy: { createdAt: "asc" },
+		include: { patient: true, appointment: true },
+	});
+	const offer = offers.find((o) => {
+		const phone = o.patient?.phone ? norm(o.patient.phone) : "";
+		const isDemo =
+			allowedList.includes(phone) ||
+			(o.patient?.name === "Omar Almishri" || o.patient?.name === "Mico Ben Issa");
+		return !isDemo;
+	}) ?? offers[0];
+	if (!offer) return { ok: false, message: "No active offer to accept" };
+
+	// Assign
+	const appt = await db.appointment.update({
+		where: { id: offer.appointmentId },
+		data: { status: "FILLED", patientId: offer.patientId },
+	});
+
+	// Update offers
+	await db.offer.update({
+		where: { id: offer.id },
+		data: { status: "ACCEPTED", respondedAt: new Date() },
+	});
+	await db.offer.updateMany({
+		where: {
+			appointmentId: offer.appointmentId,
+			status: OfferStatus.SENT,
+			NOT: { id: offer.id },
+		},
+		data: { status: "REVOKED" },
+	});
+
+	await logEvent("OFFER_ACCEPTED", {
+		appointmentId: offer.appointmentId,
+		patientId: offer.patientId,
+		patientName: offer.patient.name,
+	});
+
+	return { ok: true, message: "Accepted", appointmentId: appt.id };
 }
 
 export async function cancelAppointmentForPatientPhone(phone: string) {
