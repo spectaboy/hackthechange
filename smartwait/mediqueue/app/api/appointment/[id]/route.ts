@@ -141,8 +141,16 @@ function computeRiskDetail(appointment: {
 		.sort((a, b) => b.contribution - a.contribution)
 		.slice(0, 2)
 		.map((f) => f.label.replace(/ \(.+?\)/, ""));
-	const summary =
-		top.length > 0 ? `${level} risk due to ${top.join(" & ").toLowerCase()}.` : `${level} risk overall.`;
+	// Build a concise 1-sentence explanation (<=15 words), separate from the checklist
+	const simple = top.map((t) => t.toLowerCase());
+	let summary =
+		simple.length >= 2
+			? `${level} risk due to ${simple[0]} and ${simple[1]}.`
+			: simple.length === 1
+			? `${level} risk due to ${simple[0]}.`
+			: `${level} risk due to multiple factors.`;
+	const words = summary.trim().split(/\s+/);
+	if (words.length > 15) summary = words.slice(0, 15).join(" ") + ".";
 
 	return { score: finalScore, level, factors: factors.sort((a, b) => b.contribution - a.contribution), summary };
 }
