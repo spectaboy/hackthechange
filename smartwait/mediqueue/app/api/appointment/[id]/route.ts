@@ -69,9 +69,21 @@ export async function GET(
 	return NextResponse.json(detail);
 }
 
-function computeRiskDetail(
-	appointment: NonNullable<Awaited<ReturnType<typeof db.appointment.findUnique>>>
-) {
+function computeRiskDetail(appointment: {
+	startsAt: Date;
+	createdAt: Date;
+	durationMin: number;
+	specialty: string;
+	clinicLat: number | null;
+	clinicLng: number | null;
+	patient: {
+		pastNoShows: number;
+		pastCancels: number;
+		avgConfirmDelayDays: number | null;
+		homeLat?: number | null;
+		homeLng?: number | null;
+	} | null;
+}) {
 	const startsAt = new Date(appointment.startsAt);
 	const createdAt = new Date(appointment.createdAt);
 	const leadDays = Math.max(
