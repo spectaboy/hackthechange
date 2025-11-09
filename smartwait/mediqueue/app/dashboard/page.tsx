@@ -93,6 +93,41 @@ export default function Home() {
 		el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
 	}, [events.length]);
 
+	// Client-side simulation of auto-fill narrative after a cancellation
+	const processedCancellations = useRef<Set<string>>(new Set());
+	useEffect(() => {
+		// Find the most recent cancellation event
+		const lastCancel = [...events]
+			.reverse()
+			.find((e) => e.kind === "APPOINTMENT_CANCELLED" && (e.details as any)?.appointmentId);
+		const apptId = (lastCancel?.details as any)?.appointmentId as string | undefined;
+		if (!apptId || processedCancellations.current.has(apptId)) return;
+		processedCancellations.current.add(apptId);
+
+		// After 1s, add "sending offers" activity (logged as ACTIVITY_INFO via local POST)
+		setTimeout(async () => {
+			try {
+				// Fire-and-forget: not critical if fails
+				await fetch("/api/dashboard/events", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						kind: "ACTIVITY_INFO",
+						details: { message: "Sending offers to top 3 waitlist candidates…" },
+					}),
+				});
+			} catch {}
+		}, 1000);
+
+		// After 3-5s, trigger simulate fill endpoint (auto-accept) to close the loop
+		const delay = 3000 + Math.floor(Math.random() * 2000);
+		setTimeout(async () => {
+			try {
+				await fetch(`/api/appointments/${apptId}/simulate-fill`, { method: "POST" });
+			} catch {}
+		}, delay);
+	}, [events]);
+
 	// Format activity feed entries
 	const formattedEvents = useMemo(() => {
 		return events.slice(-20).reverse().map((ev) => {
@@ -111,6 +146,12 @@ export default function Home() {
 			}
 			if (kind === "OFFER_DECLINED" && details.patientName) {
 				return `[${time}] ${details.patientName} DECLINED`;
+			}
+			if (kind === "APPOINTMENT_CANCELLED" && details.appointmentId) {
+				return `[${time}] Appointment cancelled (${details.appointmentId})`;
+			}
+			if (kind === "ACTIVITY_INFO" && details.message) {
+				return `[${time}] ${details.message}`;
 			}
 			return `[${time}] ${kind}`;
 		});

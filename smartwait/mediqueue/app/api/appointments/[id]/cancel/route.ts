@@ -19,7 +19,8 @@ export async function POST(
 		where: { id },
 		data: { status: "CANCELLED" },
 	});
-	await logEvent("appointment.cancelled", { appointmentId: appt.id });
+	// Use canonical uppercase kind so dashboard formatter picks it up
+	await logEvent("APPOINTMENT_CANCELLED", { appointmentId: appt.id });
 	await issueOffersForAppointment({ appointmentId: appt.id });
 	return NextResponse.json({ ok: true });
 }
