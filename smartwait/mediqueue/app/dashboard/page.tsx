@@ -49,14 +49,11 @@ export default function Home() {
 	const [loading, setLoading] = useState(false);
 	const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
 	const activityRef = useRef<HTMLDivElement | null>(null);
-<<<<<<< HEAD
 	const [fadeInComplete, setFadeInComplete] = useState(false);
-=======
 	// Drawer state for appointment details
 	const [drawerOpen, setDrawerOpen] = useState(false);
 	const [detailLoading, setDetailLoading] = useState(false);
 	const [selectedAppointment, setSelectedAppointment] = useState<any>(null);
->>>>>>> 961b8e91448eb106a7cb487e241349574f98642a
 
 	// Derived departments from appointment specialties
 	const departments = useMemo(() => {
@@ -492,7 +489,6 @@ export default function Home() {
 				</div>
 			)}
 
-<<<<<<< HEAD
 			{/* Full-page fade-in overlay */}
 			<div
 				className={`fixed inset-0 z-[100] transition-all duration-1400 ease-[cubic-bezier(0.4,0,0.2,1)] ${
@@ -539,7 +535,6 @@ export default function Home() {
 					}
 				`}</style>
 			</div>
-=======
 			{/* Appointment detail drawer (overlay) */}
 			{drawerOpen && (
 				<div className="fixed inset-0 z-40 flex">
@@ -649,7 +644,6 @@ export default function Home() {
 					</div>
 				</div>
 			)}
->>>>>>> 961b8e91448eb106a7cb487e241349574f98642a
 		</div>
 	);
 }
