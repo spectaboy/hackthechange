@@ -70,7 +70,7 @@ export async function GET(
 }
 
 function computeRiskDetail(
-	appointment: Awaited<ReturnType<typeof db.appointment.findUnique>>
+	appointment: NonNullable<Awaited<ReturnType<typeof db.appointment.findUnique>>>
 ) {
 	const startsAt = new Date(appointment.startsAt);
 	const createdAt = new Date(appointment.createdAt);
