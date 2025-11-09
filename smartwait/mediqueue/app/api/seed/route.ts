@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+export const runtime = "nodejs";
 import { logEvent } from "@/lib/events";
 
 function rnd(min: number, max: number) {
@@ -39,7 +40,9 @@ export async function POST() {
 					phone:
 						i === 0 && process.env.DEMO_PHONE
 							? process.env.DEMO_PHONE
-							: `+1${String(4030000000 + i).padStart(10, "0")}`,
+							: i === 1 && process.env.DEMO_PHONE_2
+								? process.env.DEMO_PHONE_2
+								: `+1${String(4030000000 + i).padStart(10, "0")}`,
 					homeLat: city.lat + rnd(-0.2, 0.2),
 					homeLng: city.lng + rnd(-0.2, 0.2),
 					pastNoShows: Math.random() < 0.3 ? Math.floor(rnd(0, 3)) : 0,

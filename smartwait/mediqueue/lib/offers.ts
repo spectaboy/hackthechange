@@ -21,6 +21,46 @@ export async function issueOffersForAppointment(params: {
 		throw new Error("Appointment not eligible for offers");
 	}
 
+	// Normalize phone helper
+	const norm = (p: string) => p.replace(/\D/g, "");
+	const demoPhone = process.env.DEMO_PHONE ? norm(process.env.DEMO_PHONE) : undefined;
+	const demoPhone2 = process.env.DEMO_PHONE_2 ? norm(process.env.DEMO_PHONE_2) : undefined;
+	const allowedList =
+		process.env.DEMO_ALLOWED_PHONES
+			?.split(",")
+			.map((s) => s.trim())
+			.filter(Boolean)
+			.map(norm) ?? [];
+	if (demoPhone && !allowedList.includes(demoPhone)) {
+		allowedList.push(demoPhone);
+	}
+	if (demoPhone2 && !allowedList.includes(demoPhone2)) {
+		allowedList.push(demoPhone2);
+	}
+
+	// Ensure allowed phones have a waitlist entry for this specialty
+	for (const phone of allowedList) {
+		const patient = await db.patient.findFirst({
+			where: { phone: { contains: phone.slice(-10) } },
+		});
+		if (patient) {
+			const existing = await db.waitlistEntry.findFirst({
+				where: { patientId: patient.id, specialty: appt.specialty },
+			});
+			if (!existing) {
+				await db.waitlistEntry.create({
+					data: {
+						patientId: patient.id,
+						specialty: appt.specialty,
+						radiusKm: 50,
+						priority: 5,
+						warmed: true,
+					},
+				});
+			}
+		}
+	}
+
 	const waitlist = await db.waitlistEntry.findMany({
 		where: { specialty: appt.specialty },
 		include: { patient: true },
@@ -32,21 +72,16 @@ export async function issueOffersForAppointment(params: {
 		clinicLng: appt.clinicLng ?? undefined,
 		startsAt: appt.startsAt,
 	});
-	// Demo bias: ensure DEMO_PHONE candidate is included and prioritized if present
-	let selected = ranked.slice(0, topN);
-	const demoPhone = process.env.DEMO_PHONE;
-	if (demoPhone) {
-		const demoIdx = ranked.findIndex(
-			(c) => c.entry.patient.phone.replace(/\D/g, "") === demoPhone.replace(/\D/g, "")
+	// If we have an allowed list, prioritize those first, then fill up to topN with others
+	let selected: typeof ranked = ranked.slice(0, topN);
+	if (allowedList.length > 0) {
+		const preferred = ranked.filter((c) =>
+			allowedList.includes(norm(c.entry.patient.phone))
 		);
-		if (demoIdx >= 0) {
-			const demoCandidate = ranked[demoIdx];
-			// Put demo candidate at the start
-			selected = [
-				demoCandidate,
-				...ranked.filter((_, i) => i !== demoIdx).slice(0, topN - 1),
-			];
-		}
+		const others = ranked.filter(
+			(c) => !allowedList.includes(norm(c.entry.patient.phone))
+		);
+		selected = [...preferred, ...others].slice(0, topN);
 	}
 
 	const now = new Date();
@@ -64,12 +99,24 @@ export async function issueOffersForAppointment(params: {
 
 		const timeStr = appt.startsAt.toLocaleString();
 		const body = `SmartWait: A slot for ${appt.specialty} at ${timeStr}. Reply 1 to accept in ${expiryMinutes} min. Reply N to skip.`;
-		const { sid } = await sendSms(c.entry.patient.phone, body);
-		if (sid) {
-			await db.offer.update({
-				where: { id: offer.id },
-				data: { smsSid: sid },
-			});
+		// Send SMS only to allowed phones (others create offers for UI but skip SMS)
+		if (allowedList.length === 0 || allowedList.includes(norm(c.entry.patient.phone))) {
+			try {
+				const { sid } = await sendSms(c.entry.patient.phone, body);
+				if (sid) {
+					await db.offer.update({
+						where: { id: offer.id },
+						data: { smsSid: sid },
+					});
+				}
+			} catch (err) {
+				console.error("[SMS error]", err);
+				await logEvent("sms.error", {
+					error: (err as Error).message,
+					appointmentId: appt.id,
+					patientId: c.entry.patientId,
+				});
+			}
 		}
 		await logEvent("offer.sent", {
 			appointmentId: appt.id,

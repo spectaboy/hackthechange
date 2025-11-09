@@ -21,8 +21,14 @@ export async function sendSms(to: string, body: string): Promise<{ sid?: string 
 		console.log("[SMS simulated]", { to, body });
 		return {};
 	}
-	const msg = await twilio.messages.create({ to, from, body });
-	return { sid: msg.sid };
+	try {
+		const msg = await twilio.messages.create({ to, from, body });
+		return { sid: msg.sid };
+	} catch (e) {
+		// Swallow to keep demo flow from 500s on invalid numbers
+		console.error("[Twilio create error]", e);
+		return {};
+	}
 }
 
 
