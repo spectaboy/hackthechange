@@ -504,7 +504,7 @@ export default function Home() {
 											</div>
 										</div>
 										<ul className="mt-3 space-y-1 text-sm">
-											{selectedAppointment.risk.factors.map((f) => (
+											{selectedAppointment.risk.factors.map((f: any) => (
 												<li key={f.id} className="flex items-center justify-between">
 													<span className="text-zinc-700">{f.label}</span>
 													<span className={cn(f.contribution >= 0 ? "text-red-600" : "text-emerald-700")}>
