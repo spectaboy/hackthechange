@@ -123,30 +123,55 @@ async function computeRiskWithAi(appointment: {
 	// Weather proxy (reuse local simulated)
 	const wx = { wx_temp_c_at_appt: 0, wx_feelslike_c_at_appt: 0, wx_snow_mm_next6h: 0, wx_wind_kph_at_appt: 5 };
 
-	const payload = {
-		patient: {
-			ageYears: appointment.patient?.ageYears ?? null,
-			pastNoShows: appointment.patient?.pastNoShows ?? 0,
-			pastCancels: appointment.patient?.pastCancels ?? 0,
-			confirmReliability: appointment.patient?.confirmReliability ?? null,
-			avgConfirmDelayDays: appointment.patient?.avgConfirmDelayDays ?? null,
-		},
-		appointment: {
-			appointmentId: appointment.id,
-			specialty: appointment.specialty,
-			severity: appointment.severity ?? "consult",
-			leadDays,
-			weekday,
-			hour,
-			hourBin,
-			distanceKm,
-			feeRequired: !!appointment.feeRequired,
-		},
-		context: {
-			...wx,
-		},
+	// Build model input (matches the template asked)
+	const ageYears = appointment.patient?.ageYears ?? null;
+	const ageBand =
+		ageYears == null
+			? "unknown"
+			: ageYears < 25
+			? "<25"
+			: ageYears < 45
+			? "25-44"
+			: ageYears < 65
+			? "45-64"
+			: "65+";
+
+	// Map severity free-text to 1..5 where procedure/high is higher
+	const sevTxt = (appointment.severity ?? "consult").toLowerCase();
+	const triageSeverity =
+		sevTxt.includes("procedure") || sevTxt.includes("surgery")
+			? 4
+			: sevTxt.includes("follow") || sevTxt.includes("review")
+			? 2
+			: 3;
+
+	const modelInput = {
+		appointment_id: appointment.id,
+		status: String((appointment as any).status ?? "SCHEDULED"),
+		booked_at: appointment.createdAt.toISOString(),
+		start_at: appointment.startsAt.toISOString(),
+		prior_no_show_12m: appointment.patient?.pastNoShows ?? null,
+		prior_cancel_short_notice_12m: appointment.patient?.pastCancels ?? null,
+		lead_time_days: leadDays,
+		last_confirm_gap_days: appointment.patient?.avgConfirmDelayDays ?? null,
+		triage_severity: triageSeverity,
+		age_band: ageBand,
+		travel_time_min: distanceKm != null ? Math.round(distanceKm / 35 * 60) : null,
+		wx_temp_c_at_appt: wx.wx_temp_c_at_appt,
+		wx_feelslike_c_at_appt: wx.wx_feelslike_c_at_appt,
+		wx_snow_mm_next6h: wx.wx_snow_mm_next6h,
+		wx_wind_kph_at_appt: wx.wx_wind_kph_at_appt,
+		opened_last_reminder: null,
+		confirm_rate_6m: appointment.patient?.confirmReliability ?? null,
+		rescheduler_count_12m: null,
+		has_noshow_fee: !!appointment.feeRequired,
+		payment_status_confirmed: null,
+		weekday,
+		hour_bin: hourBin,
+		specialty: appointment.specialty,
+		provider_id: getProviderName(appointment.specialty, startsAt).split(" ").slice(-1).join("-").toUpperCase(),
 	};
-	const inputStr = JSON.stringify(payload);
+	const inputStr = JSON.stringify(modelInput);
 	const hash = crypto.createHash("sha256").update(inputStr).digest("hex");
 
 	// 5-min cache in AiAnalysis
@@ -168,7 +193,11 @@ async function computeRiskWithAi(appointment: {
 	try {
 		// Prefer Gemini when configured; otherwise fall back to MindStudio
 		const useGemini = !!process.env.GEMINI_API_KEY;
-		const out = useGemini ? await runGeminiRisk(payload) : await runMindStudioRisk(payload);
+		const out = useGemini ? await runGeminiRisk(modelInput) : await runMindStudioRisk(modelInput);
+		// Sanity check to avoid empty outputs
+		if (!out || typeof out.score !== "number" || !isFinite(out.score)) {
+			throw new Error("AI output missing score");
+		}
 		let factors = (out.factors ?? []).map((f: any, idx: number) => ({
 			id: String(f.id ?? f.name ?? idx),
 			label: String(f.label ?? f.name ?? "factor"),
@@ -193,6 +222,7 @@ async function computeRiskWithAi(appointment: {
 			{ id: "total", label: totalLabel, contribution: Number(out.score ?? 0) },
 			{ id: "contributors", label: contribLine, contribution: positives.reduce((s, f) => s + f.contribution, 0) },
 			{ id: "mitigators", label: mitigatorLine, contribution: negatives.reduce((s, f) => s + f.contribution, 0) },
+			{ id: "analysis", label: String(out.summary ?? "").trim(), contribution: 0 },
 			...factors,
 		];
 		// Persist
@@ -215,6 +245,11 @@ async function computeRiskWithAi(appointment: {
 		return { score: out.score ?? 0, level, factors, summary: out.summary ?? "" };
 	} catch (e) {
 		// Fallback to local deterministic scorer
+		try {
+			// Log for visibility in the activity feed
+			const { logEvent } = await import("@/lib/events");
+			await logEvent("AI_DEBUG", { engine: process.env.GEMINI_API_KEY ? "gemini" : "mindstudio", step: "fallback", error: String(e) });
+		} catch {}
 		return computeRiskDetail(appointment as any);
 	}
 }

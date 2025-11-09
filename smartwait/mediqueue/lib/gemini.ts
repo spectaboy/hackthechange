@@ -1,3 +1,5 @@
+import { logEvent } from "./events";
+
 export type GeminiOutput = {
 	score: number;
 	level: "LOW" | "MEDIUM" | "HIGH" | string;
@@ -25,15 +27,14 @@ export async function runGeminiRisk(input: Record<string, unknown>): Promise<Gem
 		encodeURIComponent(apiKey);
 
 	const system = [
-		"You are a medical appointment no‑show risk engine.",
-		"Return ONLY JSON (no prose) with keys:",
-		'  - score (0..1), level ("LOW" | "MEDIUM" | "HIGH"), summary (<=2 sentences),',
-		'  - factors: array of { id, label, contribution }.',
-		"Label requirements: be descriptive and self‑contained, include the measured value, unit, and rationale.",
-		'Example label: "Lead time: 63 days (>45d threshold) — memory/priority decay".',
-		"Contribution sign convention: positive = raises risk; negative = lowers risk.",
-		"Monotonic effects: more no‑shows/cancels/leadDays/distance/weather/severity ↑ score; higher reliability/faster confirms ↓ score.",
-		"Choose level by thresholds: LOW < 0.30, MEDIUM 0.30–0.55, HIGH > 0.55.",
+		"You are Mediqueue’s Risk Engine. Input is one appointment+patient JSON.",
+		"Output STRICT JSON only (no markdown) with keys described below.",
+		"Compute risk_score in [0,1] and risk_band with thresholds: LOW<0.20, MED 0.20–0.50, HIGH>0.50.",
+		"Return: top_factors (positive contributors), mitigators (negative), analysis_text (2–3 sentences, specific),",
+		'recommendations (prewarm/offer/reminder per policy), full factors array with missing flags, audit, and missing_fields_to_add.',
+		"If a value is missing, mark missing=true and propose a Postgres column in missing_fields_to_add.",
+		"Use heuristic priors exactly as described when no model score is available.",
+		"Return ONLY the JSON object with keys: appointment_id, risk_score, risk_band, top_factors, mitigators, analysis_text, recommendations, factors, audit, missing_fields_to_add.",
 	].join(" ");
 
 	const body = {
@@ -52,9 +53,7 @@ export async function runGeminiRisk(input: Record<string, unknown>): Promise<Gem
 				role: "user",
 				parts: [
 					{
-						text:
-							"Compute no-show risk for this appointment payload. Respond with STRICT JSON only.\n" +
-							JSON.stringify(input),
+						text: JSON.stringify(input),
 					},
 				],
 			},
@@ -64,13 +63,20 @@ export async function runGeminiRisk(input: Record<string, unknown>): Promise<Gem
 	// 1–3s UX delay
 	await sleep(1000 + Math.floor(Math.random() * 2000));
 
-	const resp = await fetch(url, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(body),
-	});
+	let resp: Response;
+	try {
+		resp = await fetch(url, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(body),
+		});
+	} catch (e) {
+		await logEvent("AI_DEBUG", { engine: "gemini", step: "fetch_error", error: String(e) });
+		throw e;
+	}
 	if (!resp.ok) {
 		const txt = await resp.text().catch(() => "");
+		await logEvent("AI_DEBUG", { engine: "gemini", step: "http_error", status: resp.status, body: txt.slice(0, 500) });
 		throw new Error(`Gemini error ${resp.status}: ${txt}`);
 	}
 
@@ -82,6 +88,7 @@ export async function runGeminiRisk(input: Record<string, unknown>): Promise<Gem
 		try {
 			result = JSON.parse(t);
 		} catch {
+			await logEvent("AI_DEBUG", { engine: "gemini", step: "parse_json_fail", textSample: (t || "").slice(0, 500) });
 			return {
 				score: 0.3,
 				level: "MEDIUM",
@@ -98,17 +105,45 @@ export async function runGeminiRisk(input: Record<string, unknown>): Promise<Gem
 
 	let parsed: any = null;
 	try {
-		parsed = JSON.parse(text);
+		// Strip code fences or prose; grab the first JSON object in the text
+		const start = text.indexOf("{");
+		const end = text.lastIndexOf("}");
+		const jsonSlice = start >= 0 && end > start ? text.slice(start, end + 1) : text;
+		parsed = JSON.parse(jsonSlice.replace(/```json|```/g, "").trim());
 	} catch {
 		// Some models may already return structured JSON as object
 		parsed = result;
 	}
 
+	// Map from the prescribed schema
+	const score = Number(parsed?.risk_score ?? parsed?.score ?? 0.3);
+	const band = String(parsed?.risk_band ?? parsed?.level ?? "MED");
+	const summary = String(parsed?.analysis_text ?? parsed?.summary ?? "AI analysis completed.");
+	const top = Array.isArray(parsed?.top_factors) ? parsed.top_factors : [];
+	const mit = Array.isArray(parsed?.mitigators) ? parsed.mitigators : [];
+	const allFactors =
+		Array.isArray(parsed?.factors) && parsed.factors.length > 0
+			? parsed.factors.map((f: any) => ({
+					id: f?.name ?? f?.label,
+					label: f?.label ?? f?.name,
+					contribution: Number(f?.contribution ?? 0),
+			  }))
+			: [...top, ...mit];
+
+	await logEvent("AI_DEBUG", {
+		engine: "gemini",
+		step: "mapped_output",
+		score,
+		band,
+		topCount: top.length,
+		allCount: Array.isArray(allFactors) ? allFactors.length : 0,
+	});
+
 	const out: GeminiOutput = {
-		score: Number(parsed?.score ?? 0.3),
-		level: String(parsed?.level ?? "MEDIUM"),
-		summary: String(parsed?.summary ?? "AI analysis completed."),
-		factors: Array.isArray(parsed?.factors) ? parsed.factors : [],
+		score,
+		level: band === "HIGH" ? "HIGH" : band === "LOW" ? "LOW" : band === "MED" ? "MEDIUM" : band,
+		summary,
+		factors: allFactors,
 	};
 	return out;
 }
