@@ -5,18 +5,85 @@ import Link from "next/link";
 
 export default function Landing() {
 	const [mounted, setMounted] = useState(false);
+	const [fadeInComplete, setFadeInComplete] = useState(false);
+
 	useEffect(() => {
-		const t = setTimeout(() => setMounted(true), 30);
-		return () => clearTimeout(t);
+		// Start the fade-in animation after a brief moment
+		const t1 = setTimeout(() => setMounted(true), 200);
+		// Complete the fade-in after animation duration
+		const t2 = setTimeout(() => setFadeInComplete(true), 1400);
+		return () => {
+			clearTimeout(t1);
+			clearTimeout(t2);
+		};
 	}, []);
 
 	return (
 		<div className="relative min-h-screen overflow-hidden">
+			{/* Full-page fade-in overlay */}
+			<div
+				className={`fixed inset-0 z-[100] transition-all duration-1400 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+					fadeInComplete
+						? "pointer-events-none opacity-0 scale-105"
+						: "opacity-100 scale-100"
+				}`}
+				aria-hidden="true"
+			>
+				<div className="absolute inset-0 bg-gradient-to-br from-sky-300 via-sky-200 to-emerald-100" />
+				{/* Animated loading bars effect */}
+				<div className="absolute inset-0 flex items-center justify-center">
+					<div className="flex gap-2">
+						<div
+							className={`h-16 w-1 bg-gradient-to-t from-emerald-400 to-sky-400 rounded-full transition-all duration-500 ${
+								fadeInComplete ? "opacity-0 scale-y-0" : "opacity-100 scale-y-100"
+							}`}
+							style={{
+								animation: fadeInComplete ? "none" : "pulseBar 1s ease-in-out 0s infinite",
+							}}
+						/>
+						<div
+							className={`h-16 w-1 bg-gradient-to-t from-emerald-400 to-sky-400 rounded-full transition-all duration-500 ${
+								fadeInComplete ? "opacity-0 scale-y-0" : "opacity-100 scale-y-100"
+							}`}
+							style={{
+								animation: fadeInComplete ? "none" : "pulseBar 1s ease-in-out 0.15s infinite",
+							}}
+						/>
+						<div
+							className={`h-16 w-1 bg-gradient-to-t from-emerald-400 to-sky-400 rounded-full transition-all duration-500 ${
+								fadeInComplete ? "opacity-0 scale-y-0" : "opacity-100 scale-y-100"
+							}`}
+							style={{
+								animation: fadeInComplete ? "none" : "pulseBar 1s ease-in-out 0.3s infinite",
+							}}
+						/>
+					</div>
+				</div>
+				<style jsx>{`
+					@keyframes pulseBar {
+						0%, 100% { transform: scaleY(1); opacity: 0.6; }
+						50% { transform: scaleY(1.5); opacity: 1; }
+					}
+				`}</style>
+			</div>
 			{/* Sky gradient (slightly deeper for better cloud contrast) */}
-			<div className="absolute inset-0 bg-gradient-to-b from-sky-300 via-sky-200 to-sky-100" aria-hidden />
+			<div
+				className={`absolute inset-0 bg-gradient-to-b from-sky-300 via-sky-200 to-sky-100 transition-all duration-1400 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+					fadeInComplete ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"
+				}`}
+				aria-hidden
+			/>
 
 			{/* Simple clouds */}
-			<div className="pointer-events-none absolute inset-0" aria-hidden>
+			<div
+				className={`pointer-events-none absolute inset-0 transition-all duration-1400 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+					fadeInComplete ? "opacity-100 translate-x-0" : "opacity-0 translate-x-10"
+				}`}
+				style={{
+					transitionDelay: fadeInComplete ? "0.3s" : "0s",
+				}}
+				aria-hidden
+			>
 				<div className="cloud cloud-a" />
 				<div className="cloud cloud-b" />
 				<div className="cloud cloud-c" />
@@ -26,42 +93,77 @@ export default function Landing() {
 			</div>
 
 			{/* Animated health plus signs field */}
-			<PlusField />
+			<div
+				className={`transition-opacity duration-1000 ease-out ${
+					fadeInComplete ? "opacity-100" : "opacity-60"
+				}`}
+			>
+				<PlusField />
+			</div>
 
 			{/* Green hill */}
 			<div
 				aria-hidden
-				className="absolute inset-x-0 bottom-0 h-56 bg-gradient-to-t from-emerald-500 to-emerald-400"
-				style={{ clipPath: "ellipse(120% 60% at 50% 100%)" }}
+				className={`absolute inset-x-0 bottom-0 h-56 bg-gradient-to-t from-emerald-500 to-emerald-400 transition-all duration-1400 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+					fadeInComplete ? "opacity-100 translate-y-0" : "opacity-0 translate-y-20"
+				}`}
+				style={{
+					clipPath: "ellipse(120% 60% at 50% 100%)",
+					transitionDelay: fadeInComplete ? "0.2s" : "0s",
+				}}
 			/>
 
 			<main className="relative z-10 mx-auto flex min-h-screen max-w-6xl flex-col items-center justify-center px-6 text-center">
-				<div
-					className={`mt-[-8vh] transition-all duration-700 ${mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2"}`}
-				>
+				<div className={`mt-[-8vh] ${fadeInComplete ? "" : "opacity-0"}`}>
 					<div className="hero-bob">
-					<h1
-						className="bg-gradient-to-r from-sky-800 via-teal-800 to-emerald-700 bg-clip-text text-7xl tracking-tight text-transparent drop-shadow-[0_2px_0_rgba(0,0,0,0.06)] sm:text-9xl"
-						style={{ fontFamily: "var(--font-display)" }}
-					>
-						Mediqueue
-					</h1>
-					<p
-						className="mx-auto mt-6 max-w-4xl text-balance text-2xl leading-8 text-sky-900 sm:text-3xl font-normal tracking-tight italic"
-						style={{ fontFamily: "var(--font-geist-sans)" }}
-					>
-						Faster care. Fuller schedules. Healthier communities.
-					</p>
-
-					<div className="relative mt-12 flex items-center justify-center">
-						<Link
-							href="/login"
-							className="btn-hero inline-flex items-center justify-center rounded-full bg-emerald-600 px-10 py-4 text-lg font-semibold text-white shadow-lg ring-1 ring-emerald-500/30 transition-transform duration-200 hover:-translate-y-0.5 hover:bg-emerald-700"
+						{/* Title - flies in from top */}
+						<h1
+							className={`bg-gradient-to-r from-sky-800 via-teal-800 to-emerald-700 bg-clip-text text-7xl tracking-tight text-transparent drop-shadow-[0_2px_0_rgba(0,0,0,0.06)] sm:text-9xl transition-all duration-1000 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${
+								fadeInComplete
+									? "opacity-100 translate-y-0"
+									: "opacity-0 -translate-y-20"
+							}`}
+							style={{
+								fontFamily: "var(--font-display)",
+								transitionDelay: fadeInComplete ? "0.2s" : "0s",
+							}}
 						>
-							Login
-						</Link>
-					</div>
-					</div>
+							Mediqueue
+						</h1>
+						{/* Subtitle - flies in from bottom */}
+						<p
+							className={`mx-auto mt-6 max-w-4xl text-balance text-2xl leading-8 text-sky-900 sm:text-3xl font-normal tracking-tight italic transition-all duration-1000 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${
+								fadeInComplete
+									? "opacity-100 translate-y-0"
+									: "opacity-0 translate-y-16"
+							}`}
+							style={{
+								fontFamily: "var(--font-geist-sans)",
+								transitionDelay: fadeInComplete ? "0.4s" : "0s",
+							}}
+						>
+							Faster care. Fuller schedules. Healthier communities.
+						</p>
+
+						{/* Button - flies in from side */}
+						<div
+							className={`relative mt-12 flex items-center justify-center transition-all duration-1000 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${
+								fadeInComplete
+									? "opacity-100 translate-x-0"
+									: "opacity-0 translate-x-20"
+							}`}
+							style={{
+								transitionDelay: fadeInComplete ? "0.6s" : "0s",
+							}}
+						>
+							<Link
+								href="/login"
+								className="btn-hero inline-flex items-center justify-center rounded-full bg-emerald-600 px-10 py-4 text-lg font-semibold text-white shadow-lg ring-1 ring-emerald-500/30 transition-transform duration-200 hover:-translate-y-0.5 hover:bg-emerald-700"
+							>
+								Login
+							</Link>
+						</div>
+				</div>
 					<style jsx>{`
 						/* Gentle bob for the whole hero content */
 						.hero-bob {
@@ -140,7 +242,14 @@ type PlusParticle = {
 };
 
 function PlusField() {
+	const [mounted, setMounted] = useState(false);
+	
+	useEffect(() => {
+		setMounted(true);
+	}, []);
+
 	const particles = useMemo<PlusParticle[]>(() => {
+		if (!mounted) return [];
 		const count = 36;
 		const result: PlusParticle[] = [];
 		for (let i = 0; i < count; i++) {
@@ -158,11 +267,11 @@ function PlusField() {
 			});
 		}
 		return result;
-	}, []);
+	}, [mounted]);
 
 	return (
 		<div className="pointer-events-none absolute inset-0 z-[1] overflow-hidden" aria-hidden>
-			{particles.map((p, i) => (
+			{mounted && particles.map((p, i) => (
 				<span
 					key={i}
 					className="plus-particle select-none"
