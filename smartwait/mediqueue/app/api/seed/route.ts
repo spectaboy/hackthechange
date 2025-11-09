@@ -211,6 +211,9 @@ export async function POST() {
 		);
 	}
 
+	// Start demo flow: first inbound SMS will cancel Omar, second inbound will fill from demo phones
+	await logEvent("DEMO_FLOW_STAGE", { stage: "await_cancel", appointmentId: demoAppt.id });
+
 	await logEvent("seed.completed", { patients: patients.length, demoAppointmentId: demoAppt.id });
 	return NextResponse.json({ ok: true, demoAppointmentId: demoAppt.id });
 }

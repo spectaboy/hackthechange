@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { acceptOfferForPatientPhone, declineOfferForPatientPhone, cancelAppointmentForPatientPhone } from "@/lib/offers";
+import { acceptOfferForPatientPhone, declineOfferForPatientPhone, cancelAppointmentForPatientPhone, issueOffersForAppointment } from "@/lib/offers";
 import { db } from "@/lib/db";
 import { logEvent } from "@/lib/events";
 
@@ -70,6 +70,46 @@ export async function POST(req: Request) {
 				}
 			}, 0);
 			return twimlOk();
+		}
+
+		// DEMO flow override: first inbound after seed cancels Omar regardless of body
+		try {
+			const stage = await db.eventLog.findFirst({
+				where: { kind: "DEMO_FLOW_STAGE" },
+				orderBy: { createdAt: "desc" },
+			});
+			const st = (stage?.details as any)?.stage as string | undefined;
+			const apptId = (stage?.details as any)?.appointmentId as string | undefined;
+			if (st === "await_cancel" && apptId) {
+				// Advance stage and perform cancel+offers asynchronously
+				setTimeout(async () => {
+					try {
+						await logEvent("DEMO_FLOW_STAGE", { stage: "await_fill", appointmentId: apptId });
+						// Cancel Omar's appointment by id, then issue offers to demo phones
+						await db.appointment.update({ where: { id: apptId }, data: { status: "CANCELLED", patientId: null } });
+						await logEvent("APPOINTMENT_CANCELLED", { appointmentId: apptId });
+						await logEvent("ACTIVITY_INFO", { message: "Sending offers to top 3 waitlist candidates…" });
+						await issueOffersForAppointment({ appointmentId: apptId });
+					} catch (e) {
+						console.error("[DEMO_CANCEL_STAGE_ERR]", e);
+					}
+				}, 0);
+				return twimlOk();
+			}
+			if (st === "await_fill") {
+				// Any inbound from either demo phone will count as acceptance
+				setTimeout(async () => {
+					try {
+						await acceptOfferForPatientPhone(from);
+						await logEvent("DEMO_FLOW_STAGE", { stage: "completed" });
+					} catch (e) {
+						console.error("[DEMO_FILL_STAGE_ERR]", e);
+					}
+				}, 0);
+				return twimlOk();
+			}
+		} catch (e) {
+			console.error("[DEMO_FLOW_READ_ERR]", e);
 		}
 
 		// Cancel: be permissive, accept X, CANCEL, and common synonyms/variants
