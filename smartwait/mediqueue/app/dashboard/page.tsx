@@ -54,6 +54,8 @@ export default function Home() {
 	const [drawerOpen, setDrawerOpen] = useState(false);
 	const [detailLoading, setDetailLoading] = useState(false);
 	const [selectedAppointment, setSelectedAppointment] = useState<any>(null);
+	const [showRiskDetails, setShowRiskDetails] = useState(false);
+	const [expandedReasons, setExpandedReasons] = useState<Set<string>>(new Set());
 
 	// Derived departments from appointment specialties
 	const departments = useMemo(() => {
@@ -62,7 +64,7 @@ export default function Home() {
 		return Array.from(s).sort();
 	}, [appointments]);
 	const [activeDept, setActiveDept] = useState<string>("");
-	const [timeFilter, setTimeFilter] = useState<"day" | "week" | "month" | "all">("week");
+	const [timeFilter, setTimeFilter] = useState<"day" | "week" | "month" | "all">("all");
 
 	async function refreshAll() {
 		const [s, a, o, e] = await Promise.all([
@@ -132,38 +134,44 @@ export default function Home() {
 		}, delay);
 	}, [events]);
 
-	// Format activity feed entries
-	const formattedEvents = useMemo(() => {
-		return events.slice(-20).reverse().map((ev) => {
-			const time = new Date(ev.createdAt).toLocaleTimeString("en-US", {
-				hour: "2-digit",
-				minute: "2-digit",
-			});
-			const kind = ev.kind;
+	// Activity feed items with color-coded badges
+	const activityItems = useMemo(() => {
+		return events.slice(-30).reverse().map((ev) => {
+			const time = new Date(ev.createdAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+			const kind = ev.kind as string;
 			const details = ev.details as Record<string, unknown>;
-			
+
+			let text = "";
 			if (kind === "OFFER_SENT" && details.patientName && details.specialty) {
-				return `[${time}] Offer sent → ${details.patientName} (${details.specialty})`;
+				text = `Offer sent → ${details.patientName} (${details.specialty})`;
+			} else if (kind === "OFFER_ACCEPTED" && details.patientName) {
+				text = `${details.patientName} ACCEPTED`;
+			} else if (kind === "OFFER_DECLINED" && details.patientName) {
+				text = `${details.patientName} DECLINED`;
+			} else if (kind === "APPOINTMENT_CANCELLED" && details.appointmentId) {
+				text = `Appointment cancelled (${details.appointmentId})`;
+			} else if (kind === "ACTIVITY_INFO" && details.message) {
+				text = String(details.message);
+			} else {
+				text = kind;
 			}
-			if (kind === "OFFER_ACCEPTED" && details.patientName) {
-				return `[${time}] ${details.patientName} ACCEPTED`;
-			}
-			if (kind === "OFFER_DECLINED" && details.patientName) {
-				return `[${time}] ${details.patientName} DECLINED`;
-			}
-			if (kind === "APPOINTMENT_CANCELLED" && details.appointmentId) {
-				return `[${time}] Appointment cancelled (${details.appointmentId})`;
-			}
-			if (kind === "ACTIVITY_INFO" && details.message) {
-				return `[${time}] ${details.message}`;
-			}
-			return `[${time}] ${kind}`;
+
+			// Map kinds to badge styles
+			const badge =
+				kind === "OFFER_ACCEPTED"
+					? "border-emerald-200 bg-emerald-50 text-emerald-700"
+					: kind === "OFFER_DECLINED" || kind === "APPOINTMENT_CANCELLED"
+					? "border-red-200 bg-red-50 text-red-700"
+					: kind === "OFFER_SENT"
+					? "border-sky-200 bg-sky-50 text-sky-800"
+					: "border-zinc-200 bg-white text-zinc-700";
+
+		return { time, kind, text, badge };
 		});
 	}, [events]);
 
 	const kpis = useMemo(
 		() => [
-			{ label: "Avg Wait Time ↓", value: "2.3d", trend: "down" },
 			{ label: "Active Appointments", value: summary?.scheduled ?? 0 },
 			{ label: "Auto-Filled Slots", value: summary?.filled ?? 0 },
 			{ label: "Cancellations", value: summary?.cancelled ?? 0 },
@@ -201,14 +209,17 @@ export default function Home() {
 			return true;
 		};
 
-		return appointments.filter((a) => {
-			// Department filter
-			if (activeDept && !a.specialty.toLowerCase().includes(activeDept.toLowerCase())) {
-				return false;
-			}
-			// Time filter
-			return filterByTime(new Date(a.startsAt));
-		});
+		return appointments
+			.filter((a) => {
+				// Department filter
+				if (activeDept && !a.specialty.toLowerCase().includes(activeDept.toLowerCase())) {
+					return false;
+				}
+				// Time filter
+				return filterByTime(new Date(a.startsAt));
+			})
+			// Sort ascending (earliest -> latest)
+			.sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
 	}, [appointments, activeDept, timeFilter]);
 
 	async function seed() {
@@ -253,6 +264,19 @@ export default function Home() {
 							</h3>
 						</div>
 						<ul className="flex-1 space-y-3 overflow-y-auto min-h-0">
+							<li key="__all__">
+								<button
+									onClick={() => setActiveDept("")}
+									className={cn(
+										"w-full rounded-xl px-5 py-4 text-left text-lg font-medium transition-all border-2",
+										activeDept === ""
+											? "border-sky-200 bg-gradient-to-br from-white to-sky-50/30 text-sky-900 shadow-lg font-bold"
+											: "border-sky-100 bg-white/50 text-sky-700 hover:bg-gradient-to-br hover:from-white hover:to-sky-50/20 hover:shadow-md hover:text-sky-900"
+									)}
+								>
+									All Departments
+								</button>
+							</li>
 							{departments.map((d) => (
 								<li key={d}>
 									<button
@@ -277,40 +301,39 @@ export default function Home() {
 					{/* Top Bar */}
 					<div className="sticky top-0 z-10 mx-8 mt-6 mb-6">
 						<div className="rounded-xl border-2 border-sky-200 bg-gradient-to-br from-white/95 to-sky-50/30 p-6 shadow-lg backdrop-blur-sm">
-							<div className="flex items-center justify-between min-w-0">
-								<h1 className="text-xl font-semibold text-sky-900 min-w-0 truncate">Smart Scheduling Dashboard</h1>
-								<div className="flex items-center gap-6 text-sm text-sky-700 shrink-0">
+							<div className="flex flex-col items-center justify-center gap-4">
+								<h1 
+									className="bg-gradient-to-r from-sky-800 via-teal-800 to-emerald-700 bg-clip-text text-5xl tracking-tight text-transparent drop-shadow-[0_2px_0_rgba(0,0,0,0.06)]"
+									style={{ fontFamily: "var(--font-display)" }}
+								>
+									Mediqueue
+								</h1>
+								<div className="flex items-center gap-6 text-sm text-sky-700">
 									<span className="inline-flex items-center gap-1.5 text-emerald-700">
 										<CheckCircle2 className="h-4 w-4" />
 										Auto-Fill: ON
 									</span>
 									<span>Last Sync: {lastSyncAt ? lastSyncAt.toLocaleTimeString() : "—"}</span>
 								</div>
-							</div>
-							{/* Action Buttons */}
-							<div className="mt-4 flex items-center gap-3">
-							<button
-								onClick={seed}
-								disabled={loading}
-								className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-opacity hover:bg-emerald-700 disabled:opacity-50"
-							>
-								Seed demo data
-							</button>
-							<button
-								onClick={prepStandby}
-								disabled={loading}
-								className="rounded-lg border border-sky-200 bg-white px-4 py-2 text-sm font-medium text-sky-900 shadow-sm transition-opacity hover:bg-sky-50 disabled:opacity-50"
-							>
-								Prep standby (risk-based)
-							</button>
+								{/* Action Buttons */}
+								<div className="flex items-center gap-3">
+									<button
+										onClick={seed}
+										disabled={loading}
+										className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-opacity hover:bg-emerald-700 disabled:opacity-50"
+									>
+										Seed demo data
+									</button>
+								</div>
 							</div>
 						</div>
 					</div>
 
 					<div className="px-8 pb-32 max-w-full">
-						{/* KPI Cards - 5 in a row */}
-						<div className="mb-8 grid grid-cols-5 gap-5 min-w-0">
-							{kpis.map((kpi) => (
+						{/* KPI Cards - Centered */}
+						<div className="mb-8 flex justify-center">
+							<div className="grid grid-cols-4 gap-5 max-w-6xl">
+								{kpis.map((kpi) => (
 								<div
 									key={kpi.label}
 									className="rounded-xl border-2 border-sky-200 bg-gradient-to-br from-white to-sky-50/30 p-5 shadow-md"
@@ -319,6 +342,7 @@ export default function Home() {
 									<div className="text-3xl font-bold text-sky-900">{kpi.value}</div>
 								</div>
 							))}
+							</div>
 						</div>
 
 						{/* Risk Factor Section */}
@@ -326,8 +350,135 @@ export default function Home() {
 							<h2 className="mb-4 text-base font-bold uppercase tracking-wide text-sky-900">
 								Risk Factor Analysis
 							</h2>
-							<div className="flex h-32 items-center justify-center rounded-lg border border-sky-100 text-sm text-sky-700/70">
-								Risk factor visualization (to be implemented)
+							<div className="grid grid-cols-3 gap-4">
+								{/* HIGH Risk */}
+								<div className="rounded-lg border-2 border-red-200 bg-gradient-to-br from-red-50 to-white p-4">
+									<div className="mb-3 flex items-center gap-2">
+										<AlertTriangle className="h-5 w-5 text-red-600" />
+										<h3 className="text-sm font-bold uppercase tracking-wide text-red-900">
+											High Risk
+										</h3>
+									</div>
+									<div className="space-y-2">
+										{visibleAppointments
+											.filter((a) => a.riskLevel === "HIGH")
+											.map((a) => (
+												<div
+													key={a.id}
+													className="rounded-md border border-red-200 bg-white/80 px-3 py-2 text-sm cursor-pointer hover:bg-red-50/50 transition-all hover:shadow-md"
+													onClick={async () => {
+														setDetailLoading(true);
+														setDrawerOpen(true);
+														try {
+															const res = await fetch(`/api/appointment/${a.id}`);
+															const data = await res.json();
+															setSelectedAppointment(data);
+														} finally {
+															setDetailLoading(false);
+														}
+													}}
+												>
+													<div className="font-semibold text-red-900">
+														{a.patient?.name || "Unknown Patient"}
+													</div>
+													<div className="text-xs text-red-700">
+														{a.specialty} • {a.riskScore?.toFixed(2) || "N/A"}
+													</div>
+												</div>
+											))}
+										{visibleAppointments.filter((a) => a.riskLevel === "HIGH").length === 0 && (
+											<div className="text-center text-xs text-red-600/60 py-2">
+												No high risk patients
+											</div>
+										)}
+									</div>
+								</div>
+
+								{/* MEDIUM Risk */}
+								<div className="rounded-lg border-2 border-amber-200 bg-gradient-to-br from-amber-50 to-white p-4">
+									<div className="mb-3 flex items-center gap-2">
+										<AlertTriangle className="h-5 w-5 text-amber-600" />
+										<h3 className="text-sm font-bold uppercase tracking-wide text-amber-900">
+											Medium Risk
+										</h3>
+									</div>
+									<div className="space-y-2">
+										{visibleAppointments
+											.filter((a) => a.riskLevel === "MEDIUM")
+											.map((a) => (
+												<div
+													key={a.id}
+													className="rounded-md border border-amber-200 bg-white/80 px-3 py-2 text-sm cursor-pointer hover:bg-amber-50/50 transition-all hover:shadow-md"
+													onClick={async () => {
+														setDetailLoading(true);
+														setDrawerOpen(true);
+														try {
+															const res = await fetch(`/api/appointment/${a.id}`);
+															const data = await res.json();
+															setSelectedAppointment(data);
+														} finally {
+															setDetailLoading(false);
+														}
+													}}
+												>
+													<div className="font-semibold text-amber-900">
+														{a.patient?.name || "Unknown Patient"}
+													</div>
+													<div className="text-xs text-amber-700">
+														{a.specialty} • {a.riskScore?.toFixed(2) || "N/A"}
+													</div>
+												</div>
+											))}
+										{visibleAppointments.filter((a) => a.riskLevel === "MEDIUM").length === 0 && (
+											<div className="text-center text-xs text-amber-600/60 py-2">
+												No medium risk patients
+											</div>
+										)}
+									</div>
+								</div>
+
+								{/* LOW Risk */}
+								<div className="rounded-lg border-2 border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4">
+									<div className="mb-3 flex items-center gap-2">
+										<CheckCircle2 className="h-5 w-5 text-emerald-600" />
+										<h3 className="text-sm font-bold uppercase tracking-wide text-emerald-900">
+											Low Risk
+										</h3>
+									</div>
+									<div className="space-y-2">
+										{visibleAppointments
+											.filter((a) => a.riskLevel === "LOW")
+											.map((a) => (
+												<div
+													key={a.id}
+													className="rounded-md border border-emerald-200 bg-white/80 px-3 py-2 text-sm cursor-pointer hover:bg-emerald-50/50 transition-all hover:shadow-md"
+													onClick={async () => {
+														setDetailLoading(true);
+														setDrawerOpen(true);
+														try {
+															const res = await fetch(`/api/appointment/${a.id}`);
+															const data = await res.json();
+															setSelectedAppointment(data);
+														} finally {
+															setDetailLoading(false);
+														}
+													}}
+												>
+													<div className="font-semibold text-emerald-900">
+														{a.patient?.name || "Unknown Patient"}
+													</div>
+													<div className="text-xs text-emerald-700">
+														{a.specialty} • {a.riskScore?.toFixed(2) || "N/A"}
+													</div>
+												</div>
+											))}
+										{visibleAppointments.filter((a) => a.riskLevel === "LOW").length === 0 && (
+											<div className="text-center text-xs text-emerald-600/60 py-2">
+												No low risk patients
+											</div>
+										)}
+									</div>
+								</div>
 							</div>
 						</section>
 
@@ -335,26 +486,21 @@ export default function Home() {
 						<div className="mb-8 grid grid-cols-12 gap-6 min-w-0">
 							{/* Real-Time Schedule - Takes 8 columns */}
 							<section className="col-span-8 min-w-0 flex flex-col rounded-xl border-2 border-sky-200 bg-gradient-to-br from-white to-blue-50/20 p-6 shadow-lg max-h-[700px]">
-								<div className="mb-5 flex shrink-0 items-center justify-between">
-									<h2 className="text-lg font-bold uppercase tracking-wide text-sky-900">
-										Real-Time Schedule — {activeDept || "All Departments"}
+								<div className="mb-5 flex shrink-0 items-center gap-3">
+									<h2 className="text-lg font-bold text-sky-900">
+										Real‑Time Schedule
 									</h2>
-									<div className="flex items-center gap-2">
-										{(["day", "week", "month", "all"] as const).map((period) => (
-											<button
-												key={period}
-												onClick={() => setTimeFilter(period)}
-												className={cn(
-													"rounded-lg border px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition-all",
-													timeFilter === period
-														? "border-sky-500 bg-sky-500 text-white shadow-sm"
-														: "border-sky-200 bg-white text-sky-700 hover:bg-sky-50"
-												)}
-											>
-												{period}
-											</button>
-										))}
-									</div>
+									<span
+										className={cn(
+											"inline-flex items-center rounded-full border px-3 py-1.5 text-sm font-semibold",
+											activeDept
+												? "border-sky-300 bg-gradient-to-r from-sky-50 to-emerald-50 text-sky-900"
+												: "border-zinc-200 bg-white text-zinc-700"
+										)}
+										title={activeDept ? `Filtering by ${activeDept}` : "Showing all departments"}
+									>
+										{activeDept || "All Departments"}
+									</span>
 								</div>
 								<div className="flex-1 min-h-0 overflow-x-auto overflow-y-auto">
 									<table className="min-w-full text-sm">
@@ -362,6 +508,7 @@ export default function Home() {
 											<tr className="border-b-2 border-sky-200 bg-sky-50/90 backdrop-blur text-left text-xs font-bold uppercase tracking-wide text-sky-800">
 												<th className="px-4 py-3">Time</th>
 												<th className="px-4 py-3">Specialist</th>
+												<th className="px-4 py-3">Risk Score</th>
 												<th className="px-4 py-3">Patient</th>
 												<th className="px-4 py-3">Status</th>
 												<th className="px-4 py-3">Action</th>
@@ -370,7 +517,7 @@ export default function Home() {
 										<tbody>
 											{visibleAppointments.length === 0 ? (
 												<tr>
-													<td className="px-3 py-8 text-center text-sm text-zinc-500" colSpan={5}>
+													<td className="px-3 py-8 text-center text-sm text-zinc-500" colSpan={6}>
 														No appointments. Updates live as slots are filled or cancelled.
 													</td>
 												</tr>
@@ -395,25 +542,27 @@ export default function Home() {
 															{new Date(a.startsAt).toLocaleString()}
 														</td>
 														<td className="px-4 py-3.5 text-zinc-800 font-medium">
-															<div className="flex items-center gap-2">
-																<span>{a.specialty}</span>
-																{typeof a.riskScore === "number" && a.riskLevel && (
-																	<span
-																		className={cn(
-																			"inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold border",
-																			a.riskLevel === "HIGH" && "border-red-300 bg-red-50 text-red-700",
-																			a.riskLevel === "MEDIUM" && "border-amber-300 bg-amber-50 text-amber-700",
-																			a.riskLevel === "LOW" && "border-emerald-300 bg-emerald-50 text-emerald-700"
-																		)}
-																		title={`No-show risk ${a.riskLevel}`}
-																	>
-																		{a.riskLevel} {a.riskScore.toFixed(2)}
-																	</span>
-																)}
-															</div>
+															<div>{a.specialty}</div>
 															<div className="text-xs text-sky-700 mt-0.5">
 																{a.provider ?? "-"}
 															</div>
+														</td>
+														<td className="px-4 py-3.5">
+															{typeof a.riskScore === "number" && a.riskLevel ? (
+																<span
+																	className={cn(
+																		"inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold border",
+																		a.riskLevel === "HIGH" && "border-red-300 bg-red-50 text-red-700",
+																		a.riskLevel === "MEDIUM" && "border-amber-300 bg-amber-50 text-amber-700",
+																		a.riskLevel === "LOW" && "border-emerald-300 bg-emerald-50 text-emerald-700"
+																	)}
+																	title={`No-show risk ${a.riskLevel}`}
+																>
+																	{a.riskLevel} {a.riskScore.toFixed(2)}
+																</span>
+															) : (
+																<span className="text-zinc-400 text-xs">-</span>
+															)}
 														</td>
 														<td className="px-4 py-3.5 text-zinc-800 font-medium">{a.patient?.name ?? "-"}</td>
 														<td className="px-4 py-3.5">
@@ -461,14 +610,25 @@ export default function Home() {
 									ref={activityRef}
 									className="flex-1 min-h-0 space-y-3 overflow-y-auto pr-2"
 								>
-									{formattedEvents.length === 0 ? (
+									{activityItems.length === 0 ? (
 										<div className="py-4 text-center text-sm text-zinc-500">
 											No activity yet
 										</div>
 									) : (
-										formattedEvents.map((text, idx) => (
-											<div key={idx} className="border-b border-sky-100 pb-3 text-sm font-medium text-zinc-800">
-												{text}
+										activityItems.map((item, idx) => (
+											<div key={idx} className="border-b border-sky-100 pb-3 text-sm">
+												<div className="mb-1 flex items-center gap-2">
+													<span className="text-xs font-semibold text-zinc-500">{item.time}</span>
+													<span
+														className={cn(
+															"inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold",
+															item.badge
+														)}
+													>
+														{item.kind.replaceAll("_", " ").toLowerCase()}
+													</span>
+												</div>
+												<div className="font-medium text-zinc-800">{item.text}</div>
 											</div>
 										))
 									)}
@@ -569,7 +729,7 @@ export default function Home() {
 
 								{/* Risk block */}
 								{selectedAppointment.risk && (
-									<div className="rounded-lg border border-sky-200 p-4">
+									<div className="rounded-xl border-2 border-sky-200 bg-gradient-to-br from-white to-sky-50/30 p-5 shadow-lg">
 										<div className="flex items-center justify-between">
 											<div className="font-semibold text-sky-900">No‑Show Risk</div>
 											<div
@@ -586,22 +746,73 @@ export default function Home() {
 												{selectedAppointment.risk.level} {selectedAppointment.risk.score.toFixed(2)}
 											</div>
 										</div>
-										<ul className="mt-3 space-y-1 text-sm">
-											{selectedAppointment.risk.factors.map((f: any) => (
-												<li key={f.id} className="flex items-center justify-between">
-													<span className="text-zinc-700">{f.label}</span>
-													<span className={cn(f.contribution >= 0 ? "text-red-600" : "text-emerald-700")}>
-														{f.contribution >= 0 ? "+" : ""}
-														{f.contribution.toFixed(2)}
-													</span>
-												</li>
-											))}
-										</ul>
+
+										{/* Friendly summary */}
+										{(() => {
+											const factors: any[] = selectedAppointment.risk.factors ?? [];
+											const byMagnitude = [...factors].sort(
+												(a, b) => Math.abs(b.contribution) - Math.abs(a.contribution)
+											);
+											const top = byMagnitude.slice(0, 1)[0];
+											return (
+												<p className="mt-2 text-sm text-zinc-700">
+													Top factor:{" "}
+													<span className="font-medium text-zinc-900">
+														{top ? top.label : "—"}
+													</span>{" "}
+													{top && (
+														<span
+															className={cn(
+																"ml-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold",
+																top.contribution >= 0
+																	? "border-red-200 bg-red-50 text-red-700"
+																	: "border-emerald-200 bg-emerald-50 text-emerald-700"
+															)}
+														>
+															{top.contribution >= 0 ? "+" : ""}
+															{top.contribution.toFixed(2)}
+														</span>
+													)}
+												</p>
+											);
+										})()}
+
+										{/* Compact list with toggle */}
+										<div className="mt-3">
+											<ul className="space-y-1 text-sm">
+												{(showRiskDetails
+													? selectedAppointment.risk.factors
+													: (selectedAppointment.risk.factors ?? []).slice(0, 3)
+												).map((f: any) => (
+													<li key={f.id} className="flex items-center justify-between">
+														<span className="text-zinc-700">{f.label}</span>
+														<span
+															className={cn(
+																"ml-3 rounded px-1.5 py-0.5 text-[11px]",
+																f.contribution >= 0 ? "text-red-700" : "text-emerald-700"
+															)}
+														>
+															{f.contribution >= 0 ? "+" : ""}
+															{f.contribution.toFixed(2)}
+														</span>
+													</li>
+												))}
+											</ul>
+											{(selectedAppointment.risk.factors?.length ?? 0) > 3 && (
+												<button
+													type="button"
+													onClick={() => setShowRiskDetails((v) => !v)}
+													className="mt-2 text-xs font-semibold text-sky-800 hover:underline"
+												>
+													{showRiskDetails ? "Show less" : "Show all factors"}
+												</button>
+											)}
+										</div>
 									</div>
 								)}
 
 								{/* Waitlist block */}
-								<div className="rounded-lg border border-sky-200 p-4">
+								<div className="rounded-xl border-2 border-sky-200 bg-gradient-to-br from-white to-sky-50/30 p-5 shadow-lg">
 									<div className="font-semibold text-sky-900">Waitlist (top 5)</div>
 									<div className="mt-2 overflow-x-auto">
 										<table className="min-w-full text-sm">
@@ -616,22 +827,66 @@ export default function Home() {
 											<tbody>
 												{selectedAppointment.waitlist?.slice(0, 5).map((c: any) => (
 													<tr key={c.patientId} className="border-t text-zinc-800">
-														<td className="py-1 pr-2">{c.patientName}</td>
-														<td className="py-1 pr-2">{c.score.toFixed(2)}</td>
-														<td className="py-1 pr-2">
-															{c.canArriveMinutes != null ? `${c.canArriveMinutes} min` : "-"}
+														<td className="py-2 pr-2">{c.patientName}</td>
+														<td className="py-2 pr-2">
+															<span className="inline-flex rounded-full border border-sky-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-sky-900">
+																{c.score.toFixed(2)}
+															</span>
 														</td>
-														<td className="py-1">
-															<div className="flex flex-wrap gap-1">
-																{c.reasons?.map((r: any, i: number) => (
-																	<span
-																		key={i}
-																		className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px]"
-																	>
-																		{r}
-																	</span>
-																))}
-															</div>
+														<td className="py-2 pr-2">
+															{c.canArriveMinutes != null ? (
+																<span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
+																	{c.canArriveMinutes} min
+																</span>
+															) : (
+																<span className="text-zinc-400 text-xs">-</span>
+															)}
+														</td>
+														<td className="py-2">
+															{(() => {
+																const all = c.reasons ?? [];
+																const isOpen = expandedReasons.has(c.patientId);
+																const show = isOpen ? all : all.slice(0, 2);
+																const extra = all.length - show.length;
+																return (
+																	<div className="flex flex-wrap items-center gap-1">
+																		{show.map((r: any, i: number) => (
+																			<span
+																				key={i}
+																				className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px]"
+																			>
+																				{r}
+																			</span>
+																		))}
+																		{extra > 0 && !isOpen && (
+																			<button
+																				type="button"
+																				onClick={() => {
+																					const next = new Set(expandedReasons);
+																					next.add(c.patientId);
+																					setExpandedReasons(next);
+																				}}
+																				className="ml-1 text-[11px] font-semibold text-sky-800 hover:underline"
+																			>
+																				+{extra} more
+																			</button>
+																		)}
+																		{isOpen && all.length > 2 && (
+																			<button
+																				type="button"
+																				onClick={() => {
+																					const next = new Set(expandedReasons);
+																					next.delete(c.patientId);
+																					setExpandedReasons(next);
+																				}}
+																				className="ml-1 text-[11px] font-semibold text-sky-800 hover:underline"
+																			>
+																				Show less
+																			</button>
+																		)}
+																	</div>
+																);
+															})()}
 														</td>
 													</tr>
 												))}
