@@ -5,8 +5,8 @@ import { issueOffersForAppointment } from "@/lib/offers";
 import { acceptFirstOfferForAppointment } from "@/lib/offers";
 export const runtime = "nodejs";
 
-// Throttle cancellations to ~1 per 30s (per instance)
-let lastCancellationSimAt = 0;
+// Throttle cancellations to ~1 per 30s (per instance) with an initial 30s delay
+let lastCancellationSimAt = Date.now();
 const DEMO_NAMES_BLOCKLIST = new Set(["Omar Almishri", "Mico Ben Issa"]);
 
 async function maybeSimulateActivity() {

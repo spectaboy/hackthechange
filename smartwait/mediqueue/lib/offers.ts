@@ -295,6 +295,10 @@ export async function cancelAppointmentForPatientPhone(phone: string) {
 		patientId: patient.id,
 		patientName: patient.name,
 	});
+	// Surface a narrative line in the activity feed immediately
+	await logEvent("ACTIVITY_INFO", {
+		message: "Sending offers to top 3 waitlist candidates…",
+	});
 
 	// Issue offers immediately
 	try {
