@@ -531,7 +531,7 @@ export default function Home() {
 												</tr>
 											</thead>
 											<tbody>
-												{selectedAppointment.waitlist?.slice(0, 5).map((c) => (
+												{selectedAppointment.waitlist?.slice(0, 5).map((c: any) => (
 													<tr key={c.patientId} className="border-t text-zinc-800">
 														<td className="py-1 pr-2">{c.patientName}</td>
 														<td className="py-1 pr-2">{c.score.toFixed(2)}</td>
@@ -540,7 +540,7 @@ export default function Home() {
 														</td>
 														<td className="py-1">
 															<div className="flex flex-wrap gap-1">
-																{c.reasons?.map((r, i) => (
+																{c.reasons?.map((r: any, i: number) => (
 																	<span
 																		key={i}
 																		className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px]"
