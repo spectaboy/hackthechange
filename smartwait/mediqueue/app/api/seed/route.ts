@@ -211,8 +211,23 @@ export async function POST() {
 		);
 	}
 
-	// Start demo flow: first inbound SMS will cancel Omar, second inbound will fill from demo phones
-	await logEvent("DEMO_FLOW_STAGE", { stage: "await_cancel", appointmentId: demoAppt.id });
+	// Ensure both demo phones have waitlist entries for Cardiology to receive offers
+	for (const p of [omar, mico]) {
+		const existing = await db.waitlistEntry.findFirst({
+			where: { patientId: p.id, specialty: "Cardiology" },
+		});
+		if (!existing) {
+			await db.waitlistEntry.create({
+				data: {
+					patientId: p.id,
+					specialty: "Cardiology",
+					radiusKm: 50,
+					priority: 5,
+					warmed: true,
+				},
+			});
+		}
+	}
 
 	await logEvent("seed.completed", { patients: patients.length, demoAppointmentId: demoAppt.id });
 	return NextResponse.json({ ok: true, demoAppointmentId: demoAppt.id });
