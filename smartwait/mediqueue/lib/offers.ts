@@ -113,17 +113,19 @@ export async function issueOffersForAppointment(params: {
 				}
 			} catch (err) {
 				console.error("[SMS error]", err);
-				await logEvent("sms.error", {
+		await logEvent("SMS_ERROR", {
 					error: (err as Error).message,
 					appointmentId: appt.id,
 					patientId: c.entry.patientId,
 				});
 			}
 		}
-		await logEvent("offer.sent", {
+		await logEvent("OFFER_SENT", {
 			appointmentId: appt.id,
 			patientId: c.entry.patientId,
 			offerId: offer.id,
+			patientName: c.entry.patient.name,
+			specialty: appt.specialty,
 		});
 	}
 
@@ -169,10 +171,11 @@ export async function acceptOfferForPatientPhone(phone: string) {
 		data: { status: "REVOKED" },
 	});
 
-	await logEvent("offer.accepted", {
+	await logEvent("OFFER_ACCEPTED", {
 		appointmentId: offer.appointmentId,
 		patientId: patient.id,
 		offerId: offer.id,
+		patientName: patient.name,
 	});
 
 	// Confirm SMS
@@ -201,10 +204,11 @@ export async function declineOfferForPatientPhone(phone: string) {
 		where: { id: offer.id },
 		data: { status: "REVOKED", respondedAt: new Date() },
 	});
-	await logEvent("offer.declined", {
+	await logEvent("OFFER_DECLINED", {
 		appointmentId: offer.appointmentId,
 		patientId: patient.id,
 		offerId: offer.id,
+		patientName: patient.name,
 	});
 	return { ok: true, message: "Declined" };
 }
