@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 export const runtime = "nodejs";
 import { computeNoShowRisk } from "@/lib/risk";
+import { getSimulatedWeatherSeverity } from "@/lib/weather";
 
 export async function GET() {
 	const [scheduled, cancelled, filled, offersSent, warmedCount, upcoming] =
@@ -28,9 +29,11 @@ export async function GET() {
 			pastCancels: 0,
 			avgConfirmDelayDays: 1,
 		};
+		const severity = getSimulatedWeatherSeverity(new Date(a.startsAt));
 		const risk = computeNoShowRisk({
 			appointment: a,
 			patient: p as any,
+			weather: { extremeCold: severity >= 0.7, snowStorm: severity >= 0.7 },
 		});
 		if (risk >= 0.55) highRisk++;
 	}

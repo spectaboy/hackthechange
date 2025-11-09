@@ -133,7 +133,8 @@ export async function issueOffersForAppointment(params: {
 
 export async function acceptOfferForPatientPhone(phone: string) {
 	// Find latest active offer to this patient
-	const patient = await db.patient.findFirst({ where: { phone } });
+	const last10 = phone.replace(/\D/g, "").slice(-10);
+	const patient = await db.patient.findFirst({ where: { phone: { contains: last10 } } });
 	if (!patient) return { ok: false, message: "No patient found" };
 
 	const offer = await db.offer.findFirst({
@@ -180,7 +181,8 @@ export async function acceptOfferForPatientPhone(phone: string) {
 }
 
 export async function declineOfferForPatientPhone(phone: string) {
-	const patient = await db.patient.findFirst({ where: { phone } });
+	const last10 = phone.replace(/\D/g, "").slice(-10);
+	const patient = await db.patient.findFirst({ where: { phone: { contains: last10 } } });
 	if (!patient) return { ok: false, message: "No patient found" };
 
 	const offer = await db.offer.findFirst({
@@ -203,6 +205,46 @@ export async function declineOfferForPatientPhone(phone: string) {
 		offerId: offer.id,
 	});
 	return { ok: true, message: "Declined" };
+}
+
+export async function cancelAppointmentForPatientPhone(phone: string) {
+	// Find patient by phone (same logic as accept)
+	const last10 = phone.replace(/\D/g, "").slice(-10);
+	console.log("[CANCEL_FLOW] lookup patient by phone", { phone, last10 });
+	const patient = await db.patient.findFirst({ where: { phone: { contains: last10 } } });
+	console.log("[CANCEL_FLOW] patient match", { found: !!patient, patientId: patient?.id, patientName: patient?.name });
+	if (!patient) return { ok: false, message: "No patient found" };
+
+	// Find next scheduled appointment for this patient
+	const nextAppt = await db.appointment.findFirst({
+		where: { patientId: patient.id, status: "SCHEDULED" },
+		orderBy: { startsAt: "asc" },
+	});
+	console.log("[CANCEL_FLOW] next scheduled appt", { nextApptId: nextAppt?.id });
+	if (!nextAppt) return { ok: false, message: "No upcoming appointment" };
+
+	// Cancel it
+	const appt = await db.appointment.update({
+		where: { id: nextAppt.id },
+		data: { status: "CANCELLED", patientId: null },
+	});
+	console.log("[CANCEL_FLOW] appointment cancelled", { appointmentId: appt.id });
+	
+	await logEvent("APPOINTMENT_CANCELLED", {
+		appointmentId: appt.id,
+		patientId: patient.id,
+		patientName: patient.name,
+	});
+
+	// Issue offers immediately
+	try {
+		await issueOffersForAppointment({ appointmentId: appt.id });
+		console.log("[CANCEL_FLOW] offers issued", { appointmentId: appt.id });
+	} catch (e) {
+		console.error("[CANCEL_FLOW] offers error", e);
+	}
+
+	return { ok: true, message: "Cancelled and offers issued" };
 }
 
 
