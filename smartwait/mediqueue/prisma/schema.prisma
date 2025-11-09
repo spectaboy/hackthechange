@@ -1,0 +1,104 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Patient {
+  id                    String           @id @default(cuid())
+  name                  String
+  phone                 String
+  homeLat               Float?
+  homeLng               Float?
+  pastNoShows           Int              @default(0)
+  pastCancels           Int              @default(0)
+  avgConfirmDelayDays   Float?
+  waitlistEntries       WaitlistEntry[]
+  appointments          Appointment[]
+  offers                Offer[]
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  @@index([phone])
+}
+
+model Appointment {
+  id           String             @id @default(cuid())
+  patientId    String?
+  patient      Patient?           @relation(fields: [patientId], references: [id])
+  specialty    String
+  startsAt     DateTime
+  durationMin  Int
+  status       AppointmentStatus  @default(SCHEDULED)
+  clinicLat    Float?
+  clinicLng    Float?
+  offers       Offer[]
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  @@index([startsAt])
+  @@index([status])
+  @@index([specialty, startsAt])
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CANCELLED
+  FILLED
+}
+
+model WaitlistEntry {
+  id         String   @id @default(cuid())
+  patientId  String
+  patient    Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  specialty  String
+  radiusKm   Int      @default(25)
+  priority   Int      @default(0)
+  warmed     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([specialty, createdAt])
+  @@index([patientId])
+}
+
+model Offer {
+  id            String       @id @default(cuid())
+  appointmentId String
+  appointment   Appointment  @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  patientId     String
+  patient       Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  status        OfferStatus  @default(SENT)
+  smsSid        String?
+  expiresAt     DateTime
+  respondedAt   DateTime?
+  createdAt     DateTime     @default(now())
+
+  @@index([appointmentId])
+  @@index([patientId])
+  @@index([status])
+}
+
+enum OfferStatus {
+  SENT
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+model EventLog {
+  id        String   @id @default(cuid())
+  kind      String
+  details   Json
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
