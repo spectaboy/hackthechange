@@ -1,240 +1,210 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 
-type Summary = {
-	scheduled: number;
-	cancelled: number;
-	filled: number;
-	offersSent: number;
-	warmedCount: number;
-	highRisk: number;
-};
-
-type Appointment = {
-	id: string;
-	specialty: string;
-	startsAt: string;
-	durationMin: number;
-	status: "SCHEDULED" | "CANCELLED" | "FILLED";
-	patient?: { name: string } | null;
-};
-
-type Offer = {
-	id: string;
-	status: "SENT" | "ACCEPTED" | "EXPIRED" | "REVOKED";
-	createdAt: string;
-	expiresAt: string;
-	patient: { name: string; phone: string };
-	appointment: { specialty: string; startsAt: string };
-};
-
-type EventLog = {
-	id: string;
-	kind: string;
-	createdAt: string;
-	details: Record<string, unknown>;
-};
-
-export default function Home() {
-	const [summary, setSummary] = useState<Summary | null>(null);
-	const [appointments, setAppointments] = useState<Appointment[]>([]);
-	const [offers, setOffers] = useState<Offer[]>([]);
-	const [events, setEvents] = useState<EventLog[]>([]);
-	const [loading, setLoading] = useState(false);
-
-	async function refreshAll() {
-		const [s, a, o, e] = await Promise.all([
-			fetch("/api/dashboard/summary").then((r) => r.json()),
-			fetch("/api/dashboard/appointments").then((r) => r.json()),
-			fetch("/api/dashboard/offers").then((r) => r.json()),
-			fetch("/api/dashboard/events").then((r) => r.json()),
-		]);
-		setSummary(s);
-		setAppointments(a.appointments ?? []);
-		setOffers(o.offers ?? []);
-		setEvents(e.events ?? []);
-	}
-
+export default function Landing() {
+	const [mounted, setMounted] = useState(false);
 	useEffect(() => {
-		refreshAll();
-		const t = setInterval(refreshAll, 2000);
-		return () => clearInterval(t);
+		const t = setTimeout(() => setMounted(true), 30);
+		return () => clearTimeout(t);
 	}, []);
 
-	const kpis = useMemo(
-		() => [
-			{ label: "Scheduled", value: summary?.scheduled ?? 0 },
-			{ label: "Cancelled", value: summary?.cancelled ?? 0 },
-			{ label: "Filled", value: summary?.filled ?? 0 },
-			{ label: "Active Offers", value: summary?.offersSent ?? 0 },
-			{ label: "Standby Ready", value: summary?.warmedCount ?? 0 },
-			{ label: "High-risk Upcoming", value: summary?.highRisk ?? 0 },
-		],
-		[summary]
-	);
-
-	async function seed() {
-		setLoading(true);
-		await fetch("/api/seed", { method: "POST" });
-		await refreshAll();
-		setLoading(false);
-	}
-
-	async function prepStandby() {
-		setLoading(true);
-		await fetch("/api/prep-standby", { method: "POST" });
-		await refreshAll();
-		setLoading(false);
-	}
-
-	async function cancel(id: string) {
-		setLoading(true);
-		await fetch(`/api/appointments/${id}/cancel`, { method: "POST" });
-		await refreshAll();
-		setLoading(false);
-	}
-
 	return (
-		<div className="min-h-screen bg-zinc-50 text-zinc-900">
-			<header className="mx-auto max-w-6xl px-6 py-6">
-				<h1 className="text-2xl font-semibold">SmartWait Dashboard</h1>
-				<p className="text-sm text-zinc-600">
-					Live demo: auto-fill cancellations and prep standby via SMS
-				</p>
-			</header>
-			<main className="mx-auto max-w-6xl px-6 pb-20">
-				<div className="mb-4 flex gap-2">
-					<button
-						onClick={seed}
-						disabled={loading}
-						className="rounded bg-black px-4 py-2 text-white disabled:opacity-50"
-					>
-						Seed demo data
-					</button>
-					<button
-						onClick={prepStandby}
-						disabled={loading}
-						className="rounded border border-zinc-300 px-4 py-2 disabled:opacity-50"
-					>
-						Prep standby (risk-based)
-					</button>
-				</div>
+		<div className="relative min-h-screen overflow-hidden">
+			{/* Sky gradient (slightly deeper for better cloud contrast) */}
+			<div className="absolute inset-0 bg-gradient-to-b from-sky-300 via-sky-200 to-sky-100" aria-hidden />
 
-				{/* KPI tiles */}
-				<div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-6">
-					{kpis.map((k) => (
-						<div
-							key={k.label}
-							className="rounded-lg border border-zinc-200 bg-white p-4"
+			{/* Simple clouds */}
+			<div className="pointer-events-none absolute inset-0" aria-hidden>
+				<div className="cloud cloud-a" />
+				<div className="cloud cloud-b" />
+				<div className="cloud cloud-c" />
+				{/* Image clouds */}
+				<img src="/cloud.png" alt="" className="cloud-img cloud-left" />
+				<img src="/cloud.png" alt="" className="cloud-img cloud-right" />
+			</div>
+
+			{/* Animated health plus signs field */}
+			<PlusField />
+
+			{/* Green hill */}
+			<div
+				aria-hidden
+				className="absolute inset-x-0 bottom-0 h-56 bg-gradient-to-t from-emerald-500 to-emerald-400"
+				style={{ clipPath: "ellipse(120% 60% at 50% 100%)" }}
+			/>
+
+			<main className="relative z-10 mx-auto flex min-h-screen max-w-6xl flex-col items-center justify-center px-6 text-center">
+				<div
+					className={`mt-[-8vh] transition-all duration-700 ${mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2"}`}
+				>
+					<div className="hero-bob">
+					<h1
+						className="bg-gradient-to-r from-sky-800 via-teal-800 to-emerald-700 bg-clip-text text-7xl tracking-tight text-transparent drop-shadow-[0_2px_0_rgba(0,0,0,0.06)] sm:text-9xl"
+						style={{ fontFamily: "var(--font-display)" }}
+					>
+						Mediqueue
+					</h1>
+					<p
+						className="mx-auto mt-6 max-w-4xl text-balance text-2xl leading-8 text-sky-900 sm:text-3xl font-normal tracking-tight italic"
+						style={{ fontFamily: "var(--font-geist-sans)" }}
+					>
+						Faster care. Fuller schedules. Healthier communities.
+					</p>
+
+					<div className="relative mt-12 flex items-center justify-center">
+						<Link
+							href="/login"
+							className="btn-hero inline-flex items-center justify-center rounded-full bg-emerald-600 px-10 py-4 text-lg font-semibold text-white shadow-lg ring-1 ring-emerald-500/30 transition-transform duration-200 hover:-translate-y-0.5 hover:bg-emerald-700"
 						>
-							<div className="text-xs text-zinc-500">{k.label}</div>
-							<div className="text-2xl font-semibold">{k.value}</div>
-						</div>
-					))}
-				</div>
+							Login
+						</Link>
+					</div>
+					</div>
+					<style jsx>{`
+						/* Gentle bob for the whole hero content */
+						.hero-bob {
+							will-change: transform;
+							animation: heroBob 4.5s ease-in-out infinite alternate;
+						}
+						@keyframes heroBob {
+							from { transform: translateY(0) }
+							to { transform: translateY(-14px) }
+						}
+						@media (prefers-reduced-motion: reduce) {
+							.hero-bob { animation: none; }
+						}
 
-				<div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-3">
-					{/* Schedule */}
-					<section className="md:col-span-2 rounded-lg border border-zinc-200 bg-white p-4">
-						<div className="mb-3 flex items-center justify-between">
-							<h2 className="text-lg font-medium">Upcoming schedule</h2>
-						</div>
-						<div className="overflow-x-auto">
-							<table className="min-w-full text-sm">
-								<thead>
-									<tr className="text-left text-zinc-500">
-										<th className="px-2 py-2">Time</th>
-										<th className="px-2 py-2">Specialty</th>
-										<th className="px-2 py-2">Duration</th>
-										<th className="px-2 py-2">Status</th>
-										<th className="px-2 py-2">Patient</th>
-										<th className="px-2 py-2">Action</th>
-									</tr>
-								</thead>
-								<tbody>
-									{appointments.map((a) => (
-										<tr key={a.id} className="border-t">
-											<td className="px-2 py-2">
-												{new Date(a.startsAt).toLocaleString()}
-											</td>
-											<td className="px-2 py-2">{a.specialty}</td>
-											<td className="px-2 py-2">{a.durationMin} min</td>
-											<td className="px-2 py-2">{a.status}</td>
-											<td className="px-2 py-2">{a.patient?.name ?? "-"}</td>
-											<td className="px-2 py-2">
-												{a.status === "SCHEDULED" && (
-													<button
-														onClick={() => cancel(a.id)}
-														disabled={loading}
-														className="rounded bg-red-600 px-3 py-1 text-white disabled:opacity-50"
-													>
-														Mark Cancelled
-													</button>
-												)}
-											</td>
-										</tr>
-									))}
-								</tbody>
-							</table>
-						</div>
-					</section>
+						/* Clouds */
+						.cloud { position: absolute; background: #fff; border-radius: 9999px; opacity: .9; }
+						.cloud::before, .cloud::after { content: ""; position: absolute; background: #fff; border-radius: 9999px; }
+						.cloud-a { top: 12%; left: 10%; width: 260px; height: 70px; filter: blur(1.5px); animation: floatA 14s ease-in-out infinite alternate; }
+						.cloud-a::before { width: 90px; height: 90px; left: 35px; top: -35px; }
+						.cloud-a::after  { width: 120px; height: 120px; left: 120px; top: -50px; }
+						.cloud-b { top: 22%; right: 12%; width: 220px; height: 60px; opacity: .85; filter: blur(1.5px); animation: floatB 18s ease-in-out infinite alternate; }
+						.cloud-b::before { width: 80px; height: 80px; left: 25px; top: -30px; }
+						.cloud-b::after  { width: 100px; height: 100px; left: 105px; top: -40px; }
+						.cloud-c { top: 30%; left: 38%; width: 180px; height: 55px; opacity: .8; filter: blur(1.5px); animation: floatC 16s ease-in-out infinite alternate; }
+						.cloud-c::before { width: 70px; height: 70px; left: 20px; top: -28px; }
+						.cloud-c::after  { width: 85px; height: 85px; left: 85px; top: -35px; }
+						@keyframes floatA { from { transform: translateX(0) } to { transform: translateX(24px) } }
+						@keyframes floatB { from { transform: translateX(0) } to { transform: translateX(-20px) } }
+						@keyframes floatC { from { transform: translateX(0) } to { transform: translateX(18px) } }
 
-					{/* Activity + Offers */}
-					<section className="rounded-lg border border-zinc-200 bg-white p-4">
-						<h2 className="mb-3 text-lg font-medium">Activity</h2>
-						<ul className="space-y-2 text-sm">
-							{events.map((ev) => (
-								<li key={ev.id} className="border-b pb-2">
-									<div className="font-mono text-xs text-zinc-500">
-										{new Date(ev.createdAt).toLocaleTimeString()} · {ev.kind}
-									</div>
-									<div className="truncate">
-										{JSON.stringify(ev.details)}
-									</div>
-								</li>
-							))}
-						</ul>
-					</section>
+						/* Image clouds */
+						.cloud-img { position: absolute; opacity: .9; filter: drop-shadow(0 6px 12px rgba(2, 132, 199, 0.10)); }
+						.cloud-left  { left: 2%;  top: 10%; width: clamp(180px, 22vw, 320px); animation: floatA 16s ease-in-out infinite alternate; }
+						.cloud-right { right: 3%; top: 18%; width: clamp(160px, 20vw, 300px); animation: floatB 20s ease-in-out infinite alternate; }
 
-					<section className="rounded-lg border border-zinc-200 bg-white p-4 md:col-span-3">
-						<h2 className="mb-3 text-lg font-medium">Offers</h2>
-						<div className="overflow-x-auto">
-							<table className="min-w-full text-sm">
-								<thead>
-									<tr className="text-left text-zinc-500">
-										<th className="px-2 py-2">When</th>
-										<th className="px-2 py-2">Patient</th>
-										<th className="px-2 py-2">Phone</th>
-										<th className="px-2 py-2">Appt</th>
-										<th className="px-2 py-2">Status</th>
-										<th className="px-2 py-2">Expires</th>
-									</tr>
-								</thead>
-								<tbody>
-									{offers.map((o) => (
-										<tr key={o.id} className="border-t">
-											<td className="px-2 py-2">
-												{new Date(o.createdAt).toLocaleTimeString()}
-											</td>
-											<td className="px-2 py-2">{o.patient.name}</td>
-											<td className="px-2 py-2">{o.patient.phone}</td>
-											<td className="px-2 py-2">
-												{new Date(o.appointment.startsAt).toLocaleString()} ·{" "}
-												{o.appointment.specialty}
-											</td>
-											<td className="px-2 py-2">{o.status}</td>
-											<td className="px-2 py-2">
-												{new Date(o.expiresAt).toLocaleTimeString()}
-											</td>
-										</tr>
-									))}
-								</tbody>
-							</table>
-						</div>
-					</section>
+						/* Shiny reflective overlay */
+						.btn-hero {
+							position: relative;
+							overflow: hidden;
+						}
+						.btn-hero::after {
+							content: "";
+							position: absolute;
+							inset: -2px;
+							border-radius: 9999px;
+							background:
+								radial-gradient(120% 180% at 50% 0%,
+									rgba(255,255,255,0.55) 0%,
+									rgba(255,255,255,0.12) 35%,
+									rgba(255,255,255,0) 45%);
+							transform: translateY(-8%);
+							transition: transform .45s ease, opacity .45s ease;
+							pointer-events: none;
+							opacity: .9;
+		    			}
+						.btn-hero:hover::after {
+							transform: translateY(-16%) translateX(2%);
+							opacity: 1;
+						}
+					`}</style>
 				</div>
 			</main>
+		</div>
+	);
+}
+
+type PlusParticle = {
+	leftPercent: number;
+	fontSizePx: number;
+	animationDelaySec: number;
+	animationDurationSec: number;
+	opacity: number;
+	color: string;
+	driftPx: number;
+	scale: number;
+};
+
+function PlusField() {
+	const particles = useMemo<PlusParticle[]>(() => {
+		const count = 36;
+		const result: PlusParticle[] = [];
+		for (let i = 0; i < count; i++) {
+			// Neon health hues between green and aqua
+			const hue = 150 + Math.random() * 30; // 150-180
+			result.push({
+				leftPercent: Math.random() * 100,
+				fontSizePx: 12 + Math.round(Math.random() * 20),
+				animationDelaySec: Math.random() * 5,
+				animationDurationSec: 10 + Math.random() * 10, // 10-20s smooth rise
+				opacity: 0.45 + Math.random() * 0.35,
+				color: `hsl(${hue}, 100%, 60%)`,
+				driftPx: (Math.random() - 0.5) * 60, // -30..30px horizontal drift
+				scale: 0.8 + Math.random() * 0.8, // 0.8 - 1.6
+			});
+		}
+		return result;
+	}, []);
+
+	return (
+		<div className="pointer-events-none absolute inset-0 z-[1] overflow-hidden" aria-hidden>
+			{particles.map((p, i) => (
+				<span
+					key={i}
+					className="plus-particle select-none"
+					style={{
+						left: `${p.leftPercent}%`,
+						top: `100%`, // always start from bottom
+						fontSize: `${p.fontSizePx}px`,
+						animationDelay: `${p.animationDelaySec}s`,
+						animationDuration: `${p.animationDurationSec}s`,
+						opacity: p.opacity,
+						color: p.color,
+						// CSS vars for smooth transform-based animation
+						// @ts-ignore - custom props for CSS
+						"--driftX": `${p.driftPx}px`,
+						"--scale": p.scale,
+					}}
+				>
+					+
+				</span>
+			))}
+			<style jsx>{`
+				.plus-particle {
+					position: absolute;
+					/* Neon glow using currentColor */
+					text-shadow:
+						0 0 6px currentColor,
+						0 0 14px color-mix(in oklab, currentColor 65%, white 35%),
+						0 1px 0 rgba(255, 255, 255, 0.18);
+					transform-origin: center;
+					will-change: transform;
+					animation-name: plusRise;
+					animation-iteration-count: infinite;
+					animation-timing-function: linear;
+				}
+				@keyframes plusRise {
+					0%   { transform: translate3d(0, 0, 0) scale(var(--scale)) rotate(0deg); }
+					100% { transform: translate3d(var(--driftX), -120vh, 0) scale(calc(var(--scale) * 1.15)) rotate(25deg); }
+				}
+				@media (prefers-reduced-motion: reduce) {
+					.plus-particle { animation: none; }
+				}
+			`}</style>
 		</div>
 	);
 }
