@@ -20,6 +20,9 @@ type Appointment = {
 	durationMin: number;
 	status: "SCHEDULED" | "CANCELLED" | "FILLED";
 	patient?: { name: string } | null;
+	provider?: string;
+	riskScore?: number;
+	riskLevel?: "LOW" | "MEDIUM" | "HIGH";
 };
 
 type Offer = {
@@ -46,6 +49,10 @@ export default function Home() {
 	const [loading, setLoading] = useState(false);
 	const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
 	const activityRef = useRef<HTMLDivElement | null>(null);
+	// Drawer state for appointment details
+	const [drawerOpen, setDrawerOpen] = useState(false);
+	const [detailLoading, setDetailLoading] = useState(false);
+	const [selectedAppointment, setSelectedAppointment] = useState<any>(null);
 
 	// Derived departments from appointment specialties
 	const departments = useMemo(() => {
@@ -327,11 +334,45 @@ export default function Home() {
 												</tr>
 											) : (
 												visibleAppointments.map((a) => (
-													<tr key={a.id} className="border-b border-sky-100 hover:bg-sky-50/30 transition-colors">
+													<tr
+														key={a.id}
+														className="border-b border-sky-100 hover:bg-sky-50/30 transition-colors cursor-pointer"
+														onClick={async () => {
+															setDetailLoading(true);
+															setDrawerOpen(true);
+															try {
+																const res = await fetch(`/api/appointment/${a.id}`);
+																const data = await res.json();
+																setSelectedAppointment(data);
+															} finally {
+																setDetailLoading(false);
+															}
+														}}
+													>
 														<td className="px-4 py-3.5 text-zinc-800 font-medium">
 															{new Date(a.startsAt).toLocaleString()}
 														</td>
-														<td className="px-4 py-3.5 text-zinc-800 font-medium">{a.specialty}</td>
+														<td className="px-4 py-3.5 text-zinc-800 font-medium">
+															<div className="flex items-center gap-2">
+																<span>{a.specialty}</span>
+																{typeof a.riskScore === "number" && a.riskLevel && (
+																	<span
+																		className={cn(
+																			"inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold border",
+																			a.riskLevel === "HIGH" && "border-red-300 bg-red-50 text-red-700",
+																			a.riskLevel === "MEDIUM" && "border-amber-300 bg-amber-50 text-amber-700",
+																			a.riskLevel === "LOW" && "border-emerald-300 bg-emerald-50 text-emerald-700"
+																		)}
+																		title={`No-show risk ${a.riskLevel}`}
+																	>
+																		{a.riskLevel} {a.riskScore.toFixed(2)}
+																	</span>
+																)}
+															</div>
+															<div className="text-xs text-sky-700 mt-0.5">
+																{a.provider ?? "-"}
+															</div>
+														</td>
 														<td className="px-4 py-3.5 text-zinc-800 font-medium">{a.patient?.name ?? "-"}</td>
 														<td className="px-4 py-3.5">
 															<span
@@ -352,6 +393,8 @@ export default function Home() {
 															{a.status === "SCHEDULED" && (
 																<button
 																	onClick={() => cancel(a.id)}
+																	onMouseDown={(e) => e.stopPropagation()}
+																	onClickCapture={(e) => e.stopPropagation()}
 																	disabled={loading}
 																	className="rounded-lg bg-red-600 px-4 py-1.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:bg-red-700 disabled:opacity-50"
 																>
@@ -405,6 +448,116 @@ export default function Home() {
 					<div className="pointer-events-auto flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-4 py-3 shadow-sm">
 						<Loader2 className="h-4 w-4 animate-spin text-sky-700" />
 						<span className="text-sm text-sky-800">Working…</span>
+					</div>
+				</div>
+			)}
+
+			{/* Appointment detail drawer (overlay) */}
+			{drawerOpen && (
+				<div className="fixed inset-0 z-40 flex">
+					<div
+						className="flex-1 bg-black/20"
+						onClick={() => {
+							setDrawerOpen(false);
+							setSelectedAppointment(null);
+						}}
+					/>
+					<div className="w-full max-w-xl h-full overflow-y-auto bg-white border-l border-sky-200 p-6">
+						<h3 className="text-lg font-semibold text-sky-900">Appointment Details</h3>
+						{detailLoading || !selectedAppointment ? (
+							<div className="mt-6 flex items-center gap-2 text-sky-800">
+								<Loader2 className="h-4 w-4 animate-spin" />
+								Loading details…
+							</div>
+						) : (
+							<div className="mt-4 space-y-6">
+								<div>
+									<div className="text-sm text-sky-700">
+										{new Date(selectedAppointment.appointment.startsAt).toLocaleString()}
+									</div>
+									<div className="mt-1 font-semibold text-zinc-900">
+										{selectedAppointment.appointment.specialty} · {selectedAppointment.appointment.provider}
+									</div>
+									<div className="mt-1 text-sm text-zinc-600">
+										Status: {selectedAppointment.appointment.status} · Patient:{" "}
+										{selectedAppointment.appointment.patientName ?? "-"}
+									</div>
+								</div>
+
+								{/* Risk block */}
+								{selectedAppointment.risk && (
+									<div className="rounded-lg border border-sky-200 p-4">
+										<div className="flex items-center justify-between">
+											<div className="font-semibold text-sky-900">No‑Show Risk</div>
+											<div
+												className={cn(
+													"inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold border",
+													selectedAppointment.risk.level === "HIGH" &&
+														"border-red-300 bg-red-50 text-red-700",
+													selectedAppointment.risk.level === "MEDIUM" &&
+														"border-amber-300 bg-amber-50 text-amber-700",
+													selectedAppointment.risk.level === "LOW" &&
+														"border-emerald-300 bg-emerald-50 text-emerald-700"
+												)}
+											>
+												{selectedAppointment.risk.level} {selectedAppointment.risk.score.toFixed(2)}
+											</div>
+										</div>
+										<ul className="mt-3 space-y-1 text-sm">
+											{selectedAppointment.risk.factors.map((f) => (
+												<li key={f.id} className="flex items-center justify-between">
+													<span className="text-zinc-700">{f.label}</span>
+													<span className={cn(f.contribution >= 0 ? "text-red-600" : "text-emerald-700")}>
+														{f.contribution >= 0 ? "+" : ""}
+														{f.contribution.toFixed(2)}
+													</span>
+												</li>
+											))}
+										</ul>
+									</div>
+								)}
+
+								{/* Waitlist block */}
+								<div className="rounded-lg border border-sky-200 p-4">
+									<div className="font-semibold text-sky-900">Waitlist (top 5)</div>
+									<div className="mt-2 overflow-x-auto">
+										<table className="min-w-full text-sm">
+											<thead>
+												<tr className="text-left text-xs uppercase tracking-wide text-sky-800">
+													<th className="py-1 pr-2">Candidate</th>
+													<th className="py-1 pr-2">Score</th>
+													<th className="py-1 pr-2">ETA</th>
+													<th className="py-1">Reasons</th>
+												</tr>
+											</thead>
+											<tbody>
+												{selectedAppointment.waitlist?.slice(0, 5).map((c) => (
+													<tr key={c.patientId} className="border-t text-zinc-800">
+														<td className="py-1 pr-2">{c.patientName}</td>
+														<td className="py-1 pr-2">{c.score.toFixed(2)}</td>
+														<td className="py-1 pr-2">
+															{c.canArriveMinutes != null ? `${c.canArriveMinutes} min` : "-"}
+														</td>
+														<td className="py-1">
+															<div className="flex flex-wrap gap-1">
+																{c.reasons?.map((r, i) => (
+																	<span
+																		key={i}
+																		className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px]"
+																	>
+																		{r}
+																	</span>
+																))}
+															</div>
+														</td>
+													</tr>
+												))}
+											</tbody>
+										</table>
+									</div>
+								</div>
+							</div>
+						)}
 					</div>
 				</div>
 			)}
