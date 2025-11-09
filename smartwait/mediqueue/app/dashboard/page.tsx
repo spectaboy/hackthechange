@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, AlertTriangle, CheckCircle2, Settings } from "lucide-react";
+import { Loader2, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Summary = {
@@ -49,10 +49,14 @@ export default function Home() {
 	const [loading, setLoading] = useState(false);
 	const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
 	const activityRef = useRef<HTMLDivElement | null>(null);
+<<<<<<< HEAD
+	const [fadeInComplete, setFadeInComplete] = useState(false);
+=======
 	// Drawer state for appointment details
 	const [drawerOpen, setDrawerOpen] = useState(false);
 	const [detailLoading, setDetailLoading] = useState(false);
 	const [selectedAppointment, setSelectedAppointment] = useState<any>(null);
+>>>>>>> 961b8e91448eb106a7cb487e241349574f98642a
 
 	// Derived departments from appointment specialties
 	const departments = useMemo(() => {
@@ -81,6 +85,12 @@ export default function Home() {
 		refreshAll();
 		const t = setInterval(refreshAll, 2000);
 		return () => clearInterval(t);
+	}, []);
+
+	// Fade-in animation on mount - match landing page timing for seamless transition
+	useEffect(() => {
+		const timer = setTimeout(() => setFadeInComplete(true), 200);
+		return () => clearTimeout(timer);
 	}, []);
 
 	// Smooth auto-scroll activity feed on new events
@@ -236,38 +246,32 @@ export default function Home() {
 				aria-hidden
 			/>
 
-			<div className="relative flex min-h-screen overflow-hidden">
+			<div className={`relative flex min-h-screen overflow-hidden transition-all duration-1000 ease-out ${fadeInComplete ? "opacity-100" : "opacity-0"}`}>
 				{/* Left Sidebar - Fixed */}
-				<aside className="sticky top-0 h-screen w-80 shrink-0 border-r border-sky-100 bg-white/80 backdrop-blur flex flex-col">
+				<aside className="sticky top-0 h-screen w-80 shrink-0 border-r border-sky-200 bg-white/40 backdrop-blur flex flex-col">
 					<div className="flex-1 flex flex-col px-6 pt-6 pb-0 min-h-0">
-						<h3 className="mb-6 shrink-0 text-base font-semibold uppercase tracking-wider text-sky-800">
-							Departments
-						</h3>
-						<ul className="flex-1 space-y-2.5 overflow-y-auto min-h-0">
+						<div className="mb-4 shrink-0 rounded-lg border-b-2 border-sky-200 bg-gradient-to-r from-sky-50 to-emerald-50/30 px-4 py-3">
+							<h3 className="text-lg font-bold uppercase tracking-wider text-sky-900">
+								Departments
+							</h3>
+						</div>
+						<ul className="flex-1 space-y-3 overflow-y-auto min-h-0">
 							{departments.map((d) => (
 								<li key={d}>
 									<button
 										onClick={() => setActiveDept(d)}
 										className={cn(
-											"w-full rounded-lg px-5 py-3.5 text-left text-lg font-medium transition-all",
+											"w-full rounded-xl px-5 py-4 text-left text-lg font-medium transition-all border-2",
 											activeDept === d
-												? "bg-gradient-to-r from-sky-100 to-blue-50 text-sky-900 shadow-lg ring-2 ring-sky-300/50 border-l-4 border-sky-500"
-												: "text-sky-600 hover:bg-sky-50/50 hover:text-sky-900"
+												? "border-sky-200 bg-gradient-to-br from-white to-sky-50/30 text-sky-900 shadow-lg font-bold"
+												: "border-sky-100 bg-white/50 text-sky-700 hover:bg-gradient-to-br hover:from-white hover:to-sky-50/20 hover:shadow-md hover:text-sky-900"
 										)}
 									>
-										<span className={cn(activeDept === d && "font-bold")}>
-											{d}
-										</span>
+										{d}
 									</button>
 								</li>
 							))}
 						</ul>
-					</div>
-					<div className="shrink-0 px-6 pb-4 pt-2">
-						<button className="flex w-full items-center gap-2 rounded-lg border border-sky-200 bg-white px-4 py-3 text-base font-medium text-sky-700 transition-colors hover:bg-sky-50">
-							<Settings className="h-5 w-5" />
-							Settings
-						</button>
 					</div>
 				</aside>
 
@@ -306,7 +310,7 @@ export default function Home() {
 						</div>
 					</div>
 
-					<div className="px-8 pb-12 max-w-full">
+					<div className="px-8 pb-32 max-w-full">
 						{/* KPI Cards - 5 in a row */}
 						<div className="mb-8 grid grid-cols-5 gap-5 min-w-0">
 							{kpis.map((kpi) => (
@@ -474,11 +478,6 @@ export default function Home() {
 								</div>
 							</section>
 						</div>
-
-						{/* Footer */}
-						<footer className="mt-8 text-center text-xs font-medium uppercase tracking-wider text-sky-800/80">
-							Smart Wait Time Reduction Dashboard — Department-Based Overview
-						</footer>
 					</div>
 				</main>
 			</div>
@@ -493,6 +492,54 @@ export default function Home() {
 				</div>
 			)}
 
+<<<<<<< HEAD
+			{/* Full-page fade-in overlay */}
+			<div
+				className={`fixed inset-0 z-[100] transition-all duration-1400 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+					fadeInComplete
+						? "pointer-events-none opacity-0 scale-105"
+						: "opacity-100 scale-100"
+				}`}
+				aria-hidden="true"
+			>
+				<div className="absolute inset-0 bg-gradient-to-br from-sky-300 via-sky-200 to-emerald-100" />
+				{/* Animated loading bars effect */}
+				<div className="absolute inset-0 flex items-center justify-center">
+					<div className="flex gap-2">
+						<div
+							className={`h-16 w-1 bg-gradient-to-t from-emerald-400 to-sky-400 rounded-full transition-all duration-500 ${
+								fadeInComplete ? "opacity-0 scale-y-0" : "opacity-100 scale-y-100"
+							}`}
+							style={{
+								animation: fadeInComplete ? "none" : "pulseBar 1s ease-in-out 0s infinite",
+							}}
+						/>
+						<div
+							className={`h-16 w-1 bg-gradient-to-t from-emerald-400 to-sky-400 rounded-full transition-all duration-500 ${
+								fadeInComplete ? "opacity-0 scale-y-0" : "opacity-100 scale-y-100"
+							}`}
+							style={{
+								animation: fadeInComplete ? "none" : "pulseBar 1s ease-in-out 0.15s infinite",
+							}}
+						/>
+						<div
+							className={`h-16 w-1 bg-gradient-to-t from-emerald-400 to-sky-400 rounded-full transition-all duration-500 ${
+								fadeInComplete ? "opacity-0 scale-y-0" : "opacity-100 scale-y-100"
+							}`}
+							style={{
+								animation: fadeInComplete ? "none" : "pulseBar 1s ease-in-out 0.3s infinite",
+							}}
+						/>
+					</div>
+				</div>
+				<style jsx>{`
+					@keyframes pulseBar {
+						0%, 100% { transform: scaleY(1); opacity: 0.6; }
+						50% { transform: scaleY(1.5); opacity: 1; }
+					}
+				`}</style>
+			</div>
+=======
 			{/* Appointment detail drawer (overlay) */}
 			{drawerOpen && (
 				<div className="fixed inset-0 z-40 flex">
@@ -602,6 +649,7 @@ export default function Home() {
 					</div>
 				</div>
 			)}
+>>>>>>> 961b8e91448eb106a7cb487e241349574f98642a
 		</div>
 	);
 }
