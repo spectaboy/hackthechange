@@ -91,6 +91,8 @@ export async function POST() {
 					phone,
 					homeLat: city.lat + rnd(-0.2, 0.2),
 					homeLng: city.lng + rnd(-0.2, 0.2),
+					ageYears: 18 + Math.floor(rnd(0, 70)),
+					confirmReliability: isOmar ? 0.95 : isMico ? 0.85 : Math.round(rnd(0.5, 0.98) * 100) / 100,
 					pastNoShows: isOmar ? 0 : isMico ? 1 : Math.random() < 0.4 ? Math.floor(rnd(0, 3)) : 0,
 					pastCancels: isOmar ? 0 : isMico ? 0 : Math.random() < 0.5 ? Math.floor(rnd(0, 3)) : 0,
 					avgConfirmDelayDays: isOmar ? 0.5 : isMico ? 1.2 : Math.random() < 0.6 ? rnd(0, 4) : 1,
@@ -129,6 +131,8 @@ export async function POST() {
 			status: "SCHEDULED",
 			clinicLat: CLINICS[0].lat,
 			clinicLng: CLINICS[0].lng,
+			severity: "consult",
+			feeRequired: false,
 			patientId: omar.id,
 		},
 	});
@@ -149,6 +153,8 @@ export async function POST() {
 					status: "SCHEDULED",
 					clinicLat: city.lat,
 					clinicLng: city.lng,
+					severity: ["consult", "followup", "procedure"][i % 3],
+					feeRequired: Math.random() < 0.3,
 					patientId,
 				},
 			});

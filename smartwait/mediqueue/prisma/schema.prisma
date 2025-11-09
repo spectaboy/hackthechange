@@ -19,6 +19,8 @@ model Patient {
   phone                 String
   homeLat               Float?
   homeLng               Float?
+  ageYears              Int?
+  confirmReliability    Float?           // 0..1 proportion of timely confirmations
   pastNoShows           Int              @default(0)
   pastCancels           Int              @default(0)
   avgConfirmDelayDays   Float?
@@ -41,7 +43,10 @@ model Appointment {
   status       AppointmentStatus  @default(SCHEDULED)
   clinicLat    Float?
   clinicLng    Float?
+  severity     String?            // "consult" | "procedure" | "followup" | etc
+  feeRequired  Boolean?           // has deposit/fee requirement
   offers       Offer[]
+  aiAnalysis   AiAnalysis?
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
 
@@ -101,4 +106,17 @@ model EventLog {
   createdAt DateTime @default(now())
 
   @@index([createdAt])
+}
+
+model AiAnalysis {
+  id            String      @id @default(cuid())
+  appointmentId String      @unique
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  score         Float
+  level         String
+  summary       String
+  factors       Json
+  inputHash     String
+  updatedAt     DateTime    @updatedAt
+  createdAt     DateTime    @default(now())
 }
