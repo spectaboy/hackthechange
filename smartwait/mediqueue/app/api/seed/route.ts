@@ -202,14 +202,12 @@ export async function POST() {
 		});
 	}
 
-	// Send confirmation to Omar for the demo appointment
-	{
-		const timeStr = demoAppt.startsAt.toLocaleString();
-		await sendSms(
-			omar.phone,
-			`Mediqueue: Confirm your appointment A-DEM1 at ${timeStr}. Reply C to confirm or X to cancel.`
-		);
-	}
+	// Demo orchestration: schedule timed flow via events poller (no immediate SMS)
+	await logEvent("DEMO_ORCH_STATE", {
+		t0: new Date().toISOString(),
+		appointmentId: demoAppt.id,
+		steps: { sentConfirm: false, cancelled: false, offersSent: false, filled: false },
+	});
 
 	// Ensure both demo phones have waitlist entries for Cardiology to receive offers
 	for (const p of [omar, mico]) {
