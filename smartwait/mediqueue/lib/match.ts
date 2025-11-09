@@ -44,7 +44,8 @@ export function rankCandidates(params: {
 	const startsAtMs = params.startsAt.getTime();
 	const nowMs = Date.now();
 
-	return waitlist
+	// First pass: compute raw scores and attributes
+	const raw = waitlist
 		.map((entry) => {
 			let distanceKm: number | null = null;
 			let canArriveMinutes: number | null = null;
@@ -61,6 +62,8 @@ export function rankCandidates(params: {
 					clinicLng
 				);
 				canArriveMinutes = estimateTravelMinutes(distanceKm);
+				// Cap ETA to a reasonable demo range
+				canArriveMinutes = Math.max(5, Math.min(80, canArriveMinutes));
 			}
 
 			// Base score
@@ -91,12 +94,28 @@ export function rankCandidates(params: {
 			score += Math.min(0.2, entry.priority * 0.05);
 			if (entry.warmed) score += 0.1;
 
-			// Tie-breaker on createdAt (older first)
-			score += 0.000001 * new Date(entry.createdAt).getTime();
+			// Micro tie-breaker on createdAt (older first) – tiny epsilon
+			const epsilon = (new Date(entry.createdAt).getTime() % 1000) * 1e-6;
+			const sortScore = score + epsilon;
 
-			return { entry, score, distanceKm, canArriveMinutes };
-		})
+			return { entry, rawScore: score, sortScore, distanceKm, canArriveMinutes };
+		});
+
+	// Normalize scores to 0..1
+	const minScore = Math.min(...raw.map((r) => r.rawScore));
+	const maxScore = Math.max(...raw.map((r) => r.rawScore));
+	const denom = maxScore - minScore || 1;
+
+	const normalized: Candidate[] = raw
+		.map((r) => ({
+			entry: r.entry,
+			score: Math.max(0, Math.min(1, (r.rawScore - minScore) / denom)),
+			distanceKm: r.distanceKm,
+			canArriveMinutes: r.canArriveMinutes,
+		}))
 		.sort((a, b) => b.score - a.score);
+
+	return normalized;
 }
 
 

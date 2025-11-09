@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 export const runtime = "nodejs";
 import { rankCandidates } from "@/lib/match";
+import crypto from "crypto";
+import { runMindStudioRisk } from "@/lib/mindstudio";
+import { runGeminiRisk } from "@/lib/gemini";
 
 export async function GET(
 	_req: Request,
@@ -47,8 +50,8 @@ export async function GET(
 		};
 	});
 
-	// Compute risk with factor contributions and short summary
-	const risk = computeRiskDetail(appt);
+	// Compute risk with AI + 5-min cache, fallback to local if API fails
+	const risk = await computeRiskWithAi(appt);
 
 	const detail = {
 		appointment: {
@@ -67,6 +70,188 @@ export async function GET(
 	};
 
 	return NextResponse.json(detail);
+}
+
+async function computeRiskWithAi(appointment: {
+	id: string;
+	startsAt: Date;
+	createdAt: Date;
+	durationMin: number;
+	specialty: string;
+	clinicLat: number | null;
+	clinicLng: number | null;
+	severity?: string | null;
+	feeRequired?: boolean | null;
+	patient: {
+		name: string;
+		ageYears?: number | null;
+		pastNoShows: number;
+		pastCancels: number;
+		avgConfirmDelayDays: number | null;
+		confirmReliability?: number | null;
+		homeLat?: number | null;
+		homeLng?: number | null;
+	} | null;
+}) {
+	// Build input features
+	const startsAt = new Date(appointment.startsAt);
+	const createdAt = new Date(appointment.createdAt);
+	const leadDays = Math.max(
+		0,
+		Math.round((startsAt.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24))
+	);
+	const weekdayIdx = startsAt.getDay();
+	const weekday = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][weekdayIdx];
+	const hour = startsAt.getHours();
+	const hourBin = hour < 9 ? "early_am" : hour < 12 ? "am" : hour < 16 ? "pm" : "late_pm";
+
+	let distanceKm: number | null = null;
+	if (
+		appointment.clinicLat != null &&
+		appointment.clinicLng != null &&
+		appointment.patient?.homeLat != null &&
+		appointment.patient?.homeLng != null
+	) {
+		distanceKm = haversineKm(
+			appointment.patient.homeLat,
+			appointment.patient.homeLng,
+			appointment.clinicLat,
+			appointment.clinicLng
+		);
+	}
+
+	// Weather proxy (reuse local simulated)
+	const wx = { wx_temp_c_at_appt: 0, wx_feelslike_c_at_appt: 0, wx_snow_mm_next6h: 0, wx_wind_kph_at_appt: 5 };
+
+	// Build model input (matches the template asked)
+	const ageYears = appointment.patient?.ageYears ?? null;
+	const ageBand =
+		ageYears == null
+			? "unknown"
+			: ageYears < 25
+			? "<25"
+			: ageYears < 45
+			? "25-44"
+			: ageYears < 65
+			? "45-64"
+			: "65+";
+
+	// Map severity free-text to 1..5 where procedure/high is higher
+	const sevTxt = (appointment.severity ?? "consult").toLowerCase();
+	const triageSeverity =
+		sevTxt.includes("procedure") || sevTxt.includes("surgery")
+			? 4
+			: sevTxt.includes("follow") || sevTxt.includes("review")
+			? 2
+			: 3;
+
+	const modelInput = {
+		appointment_id: appointment.id,
+		status: String((appointment as any).status ?? "SCHEDULED"),
+		booked_at: appointment.createdAt.toISOString(),
+		start_at: appointment.startsAt.toISOString(),
+		prior_no_show_12m: appointment.patient?.pastNoShows ?? null,
+		prior_cancel_short_notice_12m: appointment.patient?.pastCancels ?? null,
+		lead_time_days: leadDays,
+		last_confirm_gap_days: appointment.patient?.avgConfirmDelayDays ?? null,
+		triage_severity: triageSeverity,
+		age_band: ageBand,
+		travel_time_min: distanceKm != null ? Math.round(distanceKm / 35 * 60) : null,
+		wx_temp_c_at_appt: wx.wx_temp_c_at_appt,
+		wx_feelslike_c_at_appt: wx.wx_feelslike_c_at_appt,
+		wx_snow_mm_next6h: wx.wx_snow_mm_next6h,
+		wx_wind_kph_at_appt: wx.wx_wind_kph_at_appt,
+		opened_last_reminder: null,
+		confirm_rate_6m: appointment.patient?.confirmReliability ?? null,
+		rescheduler_count_12m: null,
+		has_noshow_fee: !!appointment.feeRequired,
+		payment_status_confirmed: null,
+		weekday,
+		hour_bin: hourBin,
+		specialty: appointment.specialty,
+		provider_id: getProviderName(appointment.specialty, startsAt).split(" ").slice(-1).join("-").toUpperCase(),
+	};
+	const inputStr = JSON.stringify(modelInput);
+	const hash = crypto.createHash("sha256").update(inputStr).digest("hex");
+
+	// 5-min cache in AiAnalysis
+	let cached: any = null;
+	try {
+		cached = await db.aiAnalysis.findUnique({ where: { appointmentId: appointment.id } });
+	} catch {
+		// Table may not exist yet; skip cache
+	}
+	if (cached && cached.inputHash === hash && Date.now() - new Date(cached.updatedAt).getTime() < 5 * 60 * 1000) {
+		return {
+			score: cached.score,
+			level: (cached.level as any) as "LOW" | "MEDIUM" | "HIGH",
+			factors: (cached.factors as any[]) as { id: string; label: string; contribution: number }[],
+			summary: cached.summary,
+		};
+	}
+
+	try {
+		// Prefer Gemini when configured; otherwise fall back to MindStudio
+		const useGemini = !!process.env.GEMINI_API_KEY;
+		const out = useGemini ? await runGeminiRisk(modelInput) : await runMindStudioRisk(modelInput);
+		// Sanity check to avoid empty outputs
+		if (!out || typeof out.score !== "number" || !isFinite(out.score)) {
+			throw new Error("AI output missing score");
+		}
+		let factors = (out.factors ?? []).map((f: any, idx: number) => ({
+			id: String(f.id ?? f.name ?? idx),
+			label: String(f.label ?? f.name ?? "factor"),
+			contribution: Number(f.contribution ?? 0),
+		}));
+		const level =
+			out.level === "HIGH" ? "HIGH" : out.level === "LOW" ? "LOW" : "MEDIUM";
+		// Prepend a descriptive total line that includes the summary
+		const totalLabel = `Total risk ${Number(out.score ?? 0).toFixed(2)} — ${String(out.summary ?? "").trim()}`;
+		// Add concise contributor/mitigator summaries for readability
+		const positives = factors.filter((f) => f.contribution > 0).sort((a, b) => b.contribution - a.contribution).slice(0, 3);
+		const negatives = factors.filter((f) => f.contribution < 0).sort((a, b) => a.contribution - b.contribution).slice(0, 3);
+		const contribLine =
+			positives.length > 0
+				? `Top contributors: ${positives.map((f) => `${f.label} (${f.contribution >= 0 ? "+" : ""}${f.contribution.toFixed(2)})`).join(", ")}`
+				: "Top contributors: none significant";
+		const mitigatorLine =
+			negatives.length > 0
+				? `Mitigators: ${negatives.map((f) => `${f.label} (${f.contribution.toFixed(2)})`).join(", ")}`
+				: "Mitigators: none significant";
+		factors = [
+			{ id: "total", label: totalLabel, contribution: Number(out.score ?? 0) },
+			{ id: "contributors", label: contribLine, contribution: positives.reduce((s, f) => s + f.contribution, 0) },
+			{ id: "mitigators", label: mitigatorLine, contribution: negatives.reduce((s, f) => s + f.contribution, 0) },
+			{ id: "analysis", label: String(out.summary ?? "").trim(), contribution: 0 },
+			...factors,
+		];
+		// Persist
+		try {
+			await db.aiAnalysis.upsert({
+				where: { appointmentId: appointment.id },
+				create: {
+					appointmentId: appointment.id,
+					score: out.score ?? 0,
+					level,
+					summary: out.summary ?? "",
+					factors: factors as any,
+					inputHash: hash,
+				},
+				update: { score: out.score ?? 0, level, summary: out.summary ?? "", factors: factors as any, inputHash: hash },
+			});
+		} catch {
+			// Ignore if table missing
+		}
+		return { score: out.score ?? 0, level, factors, summary: out.summary ?? "" };
+	} catch (e) {
+		// Fallback to local deterministic scorer
+		try {
+			// Log for visibility in the activity feed
+			const { logEvent } = await import("@/lib/events");
+			await logEvent("AI_DEBUG", { engine: process.env.GEMINI_API_KEY ? "gemini" : "mindstudio", step: "fallback", error: String(e) });
+		} catch {}
+		return computeRiskDetail(appointment as any);
+	}
 }
 
 function computeRiskDetail(appointment: {
@@ -152,7 +337,25 @@ function computeRiskDetail(appointment: {
 	const words = summary.trim().split(/\s+/);
 	if (words.length > 15) summary = words.slice(0, 15).join(" ") + ".";
 
-	return { score: finalScore, level, factors: factors.sort((a, b) => b.contribution - a.contribution), summary };
+	// Put a descriptive total line at the top for UI without layout changes
+	const ordered = factors.sort((a, b) => b.contribution - a.contribution);
+	const positives = ordered.filter((f) => f.contribution > 0).slice(0, 3);
+	const negatives = ordered.filter((f) => f.contribution < 0).slice(0, 3);
+	const contribLine =
+		positives.length > 0
+			? `Top contributors: ${positives.map((f) => `${f.label} (${f.contribution >= 0 ? "+" : ""}${f.contribution.toFixed(2)})`).join(", ")}`
+			: "Top contributors: none significant";
+	const mitigatorLine =
+		negatives.length > 0
+			? `Mitigators: ${negatives.map((f) => `${f.label} (${f.contribution.toFixed(2)})`).join(", ")}`
+			: "Mitigators: none significant";
+	const totalFirst = [
+		{ id: "total", label: `Total risk ${finalScore.toFixed(2)} — ${summary}`, contribution: finalScore },
+		{ id: "contributors", label: contribLine, contribution: positives.reduce((s, f) => s + f.contribution, 0) },
+		{ id: "mitigators", label: mitigatorLine, contribution: negatives.reduce((s, f) => s + f.contribution, 0) },
+		...ordered,
+	];
+	return { score: finalScore, level, factors: totalFirst, summary };
 }
 
 function haversineKm(
