@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { issueOffersForAppointment } from "@/lib/offers";
 import { logEvent } from "@/lib/events";
+export const runtime = "nodejs";
 
 export async function POST(
 	_req: Request,

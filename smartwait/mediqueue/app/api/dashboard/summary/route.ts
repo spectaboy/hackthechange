@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+export const runtime = "nodejs";
 import { computeNoShowRisk } from "@/lib/risk";
 
 export async function GET() {

@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { logEvent } from "@/lib/events";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 export async function POST(req: Request) {
 	// Twilio sends x-www-form-urlencoded

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+export const runtime = "nodejs";
 import { issueOffersForAppointment } from "@/lib/offers";
 
 export async function POST(req: Request) {

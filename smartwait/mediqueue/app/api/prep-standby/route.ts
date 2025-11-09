@@ -4,6 +4,7 @@ import { computeNoShowRisk } from "@/lib/risk";
 import { rankCandidates } from "@/lib/match";
 import { sendSms } from "@/lib/twilio";
 import { logEvent } from "@/lib/events";
+export const runtime = "nodejs";
 
 export async function POST() {
 	const upcoming = await db.appointment.findMany({
